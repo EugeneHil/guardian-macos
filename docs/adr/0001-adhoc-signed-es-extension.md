@@ -23,6 +23,15 @@ v0.1 proceeds **without** a paid certificate. The ES extension is ad-hoc signed 
 6. **Restart after `kill -9`:** the extension was running again and denying within about 1 s. The poll step was 0.5 s, so the fail-open window itself was **not observed**; its length is unmeasured.
 7. Replaced builds leave a `[terminated waiting to uninstall on reboot]` entry in `systemextensionsctl list` until the guest reboots. Harmless.
 
+## Exact configuration that worked
+
+- Signing: ad-hoc (`codesign --force --sign -`), extension signed first, then the app; no Team ID; `ENABLE_HARDENED_RUNTIME=NO`; `CODE_SIGN_STYLE=Manual`; deployment target macOS 15.0; extension linked with `-lEndpointSecurity`.
+- Extension entitlements: `com.apple.developer.endpoint-security.client = true` and `com.apple.security.application-groups = ["dev.warden.spike"]`.
+- App entitlement: `com.apple.developer.system-extension.install = true`.
+- Extension Info.plist: `CFBundlePackageType = SYSX`, `NSEndpointSecurityMachServiceName = dev.warden.spike.ext`, `NSEndpointSecurityEarlyBoot = false`, `NSSystemExtensionUsageDescription` (see finding 3).
+- App Info.plist: `NSSystemExtensionUsageDescription`.
+- Bundle identifiers: app `dev.warden.spike`, extension `dev.warden.spike.ext` (the app identifier is a prefix of the extension's).
+
 ## Not verified by the spike
 
 - Whether Full Disk Access is strictly required for the extension (it was granted per the runbook; not isolated).
