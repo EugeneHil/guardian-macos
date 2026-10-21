@@ -33,7 +33,7 @@ let project = Project(
             infoPlist: .file(path: "Ext/Info.plist"),
             sources: ["Ext/**/*.swift"],
             entitlements: .file(path: "Ext/SpikeExt.entitlements"),
-            settings: .settings(base: adhoc.merging(["OTHER_LDFLAGS": "-lEndpointSecurity"]) { $1 })
+            settings: .settings(base: adhoc.merging(["OTHER_LDFLAGS": "-lEndpointSecurity", "PRODUCT_NAME": "dev.warden.spike.ext"]) { $1 })
         ),
     ]
 )

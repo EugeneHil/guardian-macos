@@ -6,7 +6,7 @@ xcodebuild -workspace Spike.xcworkspace -scheme SpikeApp -configuration Debug -d
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > build.log 2>&1 \
   || { grep -E "error:" build.log | head; exit 1; }
 app="build/Build/Products/Debug/SpikeApp.app"
-ext="$app/Contents/Library/SystemExtensions/SpikeExt.systemextension"
+ext="$app/Contents/Library/SystemExtensions/dev.warden.spike.ext.systemextension"
 codesign --force --sign - --entitlements Ext/SpikeExt.entitlements "$ext"
 codesign --force --sign - --entitlements App/SpikeApp.entitlements "$app"
 codesign -dvv --entitlements - "$ext" 2>&1 | grep -E "Identifier|Signature|endpoint-security|TeamIdentifier"

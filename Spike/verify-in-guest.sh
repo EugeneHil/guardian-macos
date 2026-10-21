@@ -11,7 +11,7 @@ cat /tmp/warden-spike/other.txt
 echo "--- secret.txt (expect: Operation not permitted):"
 cat /tmp/warden-spike/secret.txt
 echo "--- kill -9 the extension, then poll until denial returns:"
-pid=$(pgrep -f SpikeExt | head -1)
+pid=$(pgrep -f dev.warden.spike.ext | head -1)
 echo "ext pid: ${pid:-none}"
 [ -n "$pid" ] && sudo kill -9 "$pid"
 start=$(date +%s)
