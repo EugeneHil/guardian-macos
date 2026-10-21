@@ -18,6 +18,8 @@
     <string>0.0.1</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>NSSystemExtensionUsageDescription</key>
+    <string>Spike: monitors file opens to block access to a protected test file.</string>
     <key>NSEndpointSecurityEarlyBoot</key>
     <false/>
     <key>NSEndpointSecurityMachServiceName</key>
