@@ -13,6 +13,7 @@ if [[ ! -f "$src/CMakeLists.txt" ]]; then
   exit 1
 fi
 
+mkdir -p "$out"
 cmake --preset macos -S "$src" -B "$out" -DWARDEN_BUILD_TESTS=OFF \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 >"$out.configure.log" 2>&1 \
   || { tail -n 40 "$out.configure.log"; exit 1; }

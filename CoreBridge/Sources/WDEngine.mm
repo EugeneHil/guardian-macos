@@ -40,12 +40,21 @@ NSString *toNS(const std::string &value) {
 - (instancetype)initWithPolicy:(WDPolicy *)policy {
   self = [super init];
   if (self != nil) {
-    _engine = std::make_unique<const warden::Engine>(policy.corePolicy);
+    // Fail-open: if construction throws (e.g. std::bad_alloc) the engine stays null and every
+    // request is allowed; an exception must never cross into Swift.
+    try {
+      _engine = std::make_unique<const warden::Engine>(policy.corePolicy);
+    } catch (...) {
+      _engine.reset();
+    }
   }
   return self;
 }
 
 - (WDDecision *)evaluate:(WDAccessRequest *)request {
+  if (_engine == nullptr) {
+    return [[WDDecision alloc] initWithDeny:NO ruleId:@""];
+  }
   try {
     warden::AccessRequest core;
     core.filePath = toStd(request.filePath);
@@ -63,6 +72,9 @@ NSString *toNS(const std::string &value) {
 }
 
 - (BOOL)isPotentiallyProtectedPath:(const char *)path length:(NSUInteger)length {
+  if (_engine == nullptr) {
+    return NO;
+  }
   return _engine->isPotentiallyProtected(std::string_view(path, length));
 }
 
