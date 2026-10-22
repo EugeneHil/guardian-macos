@@ -16,7 +16,7 @@ private final class FakeClient: NSObject, WardenClientXPC, Sendable {
         super.init()
     }
 
-    func eventRecorded(_ eventData: Data) async {
+    func eventRecorded(_ eventData: Data) {
         continuation.yield(eventData)
     }
 
@@ -35,25 +35,6 @@ private final class FakeClient: NSObject, WardenClientXPC, Sendable {
             group.cancelAll()
             return first
         }
-    }
-}
-
-/// A peer that never answers: `eventRecorded` suspends until `release()`.
-private final class HangingClient: NSObject, WardenClientXPC, Sendable {
-    private let stream: AsyncStream<Void>
-    private let continuation: AsyncStream<Void>.Continuation
-
-    override init() {
-        (stream, continuation) = AsyncStream.makeStream(of: Void.self)
-        super.init()
-    }
-
-    func eventRecorded(_: Data) async {
-        for await _ in stream {}
-    }
-
-    func release() {
-        continuation.finish()
     }
 }
 
@@ -168,15 +149,13 @@ final class ExtensionServiceTests: XCTestCase {
     func testInvalidatedConnectionClientIsRemoved() async throws {
         let (rig, dir) = try make()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let connectionA = NSObject()
-        let connectionB = NSObject()
         let gone = FakeClient()
         let kept = FakeClient()
-        await rig.service.subscribe(client: gone, connectionKey: ObjectIdentifier(connectionA))
-        await rig.service.subscribe(client: kept, connectionKey: ObjectIdentifier(connectionB))
+        await rig.service.subscribe(client: gone, connectionKey: 1)
+        await rig.service.subscribe(client: kept, connectionKey: 2)
         var count = await rig.service.subscriberCount()
         XCTAssertEqual(count, 2)
-        await rig.service.removeClients(connectionKey: ObjectIdentifier(connectionA))
+        await rig.service.removeClients(connectionKey: 1)
         count = await rig.service.subscriberCount()
         XCTAssertEqual(count, 1)
         await rig.events.record(event(1))
@@ -187,8 +166,7 @@ final class ExtensionServiceTests: XCTestCase {
     func testResubscribeOnSameConnectionDoesNotDuplicate() async throws {
         let (rig, dir) = try make()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let connection = NSObject()
-        let key = ObjectIdentifier(connection)
+        let key: UInt64 = 7
         let old = FakeClient()
         let fresh = FakeClient()
         await rig.service.subscribe(client: old, connectionKey: key)
@@ -200,21 +178,15 @@ final class ExtensionServiceTests: XCTestCase {
         XCTAssertEqual(try XPCCoding.decode(XCTUnwrap(data)), event(1))
     }
 
-    func testStuckClientDoesNotBlockOthers() async throws {
-        let (rig, dir) = try make()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let stuck = HangingClient()
-        defer { stuck.release() }
-        let healthy = FakeClient()
-        await rig.service.subscribe(client: stuck, connectionKey: ObjectIdentifier(stuck))
-        await rig.service.subscribe(client: healthy, connectionKey: ObjectIdentifier(healthy))
-        for number in 1 ... 3 {
-            await rig.events.record(event(number))
-        }
-        for number in 1 ... 3 {
-            let data = await healthy.next()
-            XCTAssertEqual(try XPCCoding.decode(XCTUnwrap(data)), event(number))
-        }
+    func testRemoveBeforeAddLeavesNoEntry() async {
+        let hub = ClientHub()
+        await hub.remove(key: 1)
+        await hub.add(key: 1, client: FakeClient())
+        let count = await hub.count
+        XCTAssertEqual(count, 0)
+        await hub.add(key: 2, client: FakeClient())
+        let other = await hub.count
+        XCTAssertEqual(other, 1)
     }
 
     func testPeerRequirementPinsBundleIdentifier() {

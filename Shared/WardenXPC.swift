@@ -14,8 +14,9 @@ import Foundation
 
 /// Served by the app for live event delivery from the extension.
 @objc protocol WardenClientXPC: Sendable {
-    /// One JSON `AccessEvent`.
-    func eventRecorded(_ eventData: Data) async
+    /// One JSON `AccessEvent`. Fire-and-forget (no reply): live delivery is best-effort, `drainEvents` is the
+    /// reliable path, and a reply from a dead peer might never arrive.
+    func eventRecorded(_ eventData: Data)
 }
 
 /// Errors that cross the XPC boundary from the extension to the app.
