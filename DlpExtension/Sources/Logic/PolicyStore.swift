@@ -35,9 +35,22 @@ actor PolicyStore: PolicyPersisting {
         }
     }
 
+    /// Creates the cache directory (mode 0700) or tightens an existing one to 0700, and removes temp files left
+    /// behind by an interrupted save. Call once at startup.
+    func prepareDirectory() throws {
+        let directory = fileURL.deletingLastPathComponent()
+        try createDirectory(directory)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        let prefix = ".\(fileURL.lastPathComponent)."
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        for name in names.filter({ $0.hasPrefix(prefix) && $0.hasSuffix(".tmp") }) {
+            unlink(directory.appendingPathComponent(name).path)
+        }
+    }
+
     func save(_ data: Data) throws {
         let directory = fileURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try createDirectory(directory)
         let tempURL = directory.appendingPathComponent(".\(fileURL.lastPathComponent).\(UUID().uuidString).tmp")
         let descriptor = open(tempURL.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
         guard descriptor >= 0 else { throw posixError("open") }
@@ -52,6 +65,13 @@ actor PolicyStore: PolicyPersisting {
             unlink(tempURL.path)
             throw error
         }
+    }
+
+    /// Missing directories are created with mode 0700 (FileManager would default to 0755); existing ones are kept.
+    private func createDirectory(_ directory: URL) throws {
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
     }
 
     private func posixError(_ call: String) -> NSError {

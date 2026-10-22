@@ -6,6 +6,20 @@ import Synchronization
 struct ProcessToken: Sendable, Hashable {
     let pid: Int32
     let pidVersion: Int32
+    /// The raw `audit_token_t` words (8) when known: lets the resolver address exactly this process instance.
+    let auditToken: [UInt32]?
+
+    init(pid: Int32, pidVersion: Int32, auditToken: [UInt32]? = nil) {
+        self.pid = pid
+        self.pidVersion = pidVersion
+        self.auditToken = auditToken
+    }
+
+    /// Reads pid and pid version from the `audit_token_t` words (`val[5]` and `val[7]`, as libbsm does).
+    init?(auditTokenWords words: [UInt32]) {
+        guard words.count == 8 else { return nil }
+        self.init(pid: Int32(bitPattern: words[5]), pidVersion: Int32(bitPattern: words[7]), auditToken: words)
+    }
 }
 
 /// Looks up the code-signing identity of a live process.
@@ -96,6 +110,17 @@ final class OpenCoordinator: Sendable {
     /// Synchronous and allocation-free; safe to call from the Endpoint Security handler.
     func fastPathAllows(_ path: UnsafeRawBufferPointer) -> Bool {
         holder.fastPathAllows(path)
+    }
+
+    /// `fastPathAllows` plus the policy generation it was decided under. Synchronous and allocation-free; the
+    /// adapter compares the generation with `policyGeneration` after caching an allow.
+    func fastPathDecision(_ path: UnsafeRawBufferPointer) -> (allows: Bool, generation: UInt64) {
+        holder.fastPathDecision(path)
+    }
+
+    /// Generation of the active policy; changes on every policy activation or reset.
+    var policyGeneration: UInt64 {
+        holder.generation
     }
 
     /// Never blocks: starts the evaluation and the watchdog and returns. `respond` is called exactly once — before

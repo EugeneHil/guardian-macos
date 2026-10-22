@@ -61,4 +61,58 @@ final class PolicyStoreTests: XCTestCase {
             XCTFail("expected load to throw")
         } catch is PolicyStoreError {}
     }
+
+    // MARK: - Directory
+
+    private func mode(_ url: URL) throws -> Int? {
+        try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
+    }
+
+    func testSaveCreatesDirectoryWithMode0700() async throws {
+        let sub = dir.appendingPathComponent("Warden")
+        let store = PolicyStore(fileURL: sub.appendingPathComponent("policy.json"))
+        try await store.save(Data("x".utf8))
+        XCTAssertEqual(try mode(sub), 0o700)
+    }
+
+    func testPrepareCreatesDirectoryWithMode0700() async throws {
+        let sub = dir.appendingPathComponent("Warden")
+        let store = PolicyStore(fileURL: sub.appendingPathComponent("policy.json"))
+        try await store.prepareDirectory()
+        XCTAssertEqual(try mode(sub), 0o700)
+    }
+
+    func testPrepareTightensExistingDirectory() async throws {
+        let sub = dir.appendingPathComponent("Warden")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sub.path)
+        let store = PolicyStore(fileURL: sub.appendingPathComponent("policy.json"))
+        try await store.prepareDirectory()
+        XCTAssertEqual(try mode(sub), 0o700)
+    }
+
+    func testPrepareRemovesLeftoverTempFilesOnly() async throws {
+        let url = dir.appendingPathComponent("policy.json")
+        let store = PolicyStore(fileURL: url)
+        try await store.save(Data("keep".utf8))
+        let leftover = dir.appendingPathComponent(".policy.json.\(UUID().uuidString).tmp")
+        try Data("partial".utf8).write(to: leftover)
+        let unrelated = dir.appendingPathComponent("notes.tmp")
+        try Data("other".utf8).write(to: unrelated)
+        try await store.prepareDirectory()
+        let names = try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
+        XCTAssertEqual(names, ["notes.tmp", "policy.json"])
+        let loaded = try await store.load()
+        XCTAssertEqual(loaded, Data("keep".utf8))
+    }
+
+    func testPrepareFailsWhenParentIsAFile() async throws {
+        let blocker = dir.appendingPathComponent("file")
+        try Data("x".utf8).write(to: blocker)
+        let store = PolicyStore(fileURL: blocker.appendingPathComponent("Warden/policy.json"))
+        do {
+            try await store.prepareDirectory()
+            XCTFail("expected prepareDirectory to throw")
+        } catch {}
+    }
 }
