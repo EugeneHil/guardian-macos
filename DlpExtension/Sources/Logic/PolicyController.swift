@@ -46,6 +46,8 @@ actor PolicyController {
                 return
             }
             holder.set(policy: policy)
+            // Fast-path allows answered while the cache was loading may cover paths this policy protects.
+            cache.clearCache()
             log("loaded cached policy version \(policy.version)")
         } catch {
             log("cached policy unusable, allowing everything: \(error.localizedDescription)")

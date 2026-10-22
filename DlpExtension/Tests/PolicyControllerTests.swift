@@ -56,7 +56,8 @@ final class PolicyControllerTests: XCTestCase {
         XCTAssertEqual(rig.holder.version, 4)
         let version = await rig.controller.currentVersion()
         XCTAssertEqual(version, 4)
-        XCTAssertEqual(rig.cache.count.withLock { $0 }, 0)
+        // Fast-path allows cached by the kernel before the policy loaded must not outlive it.
+        XCTAssertEqual(rig.cache.count.withLock { $0 }, 1)
     }
 
     func testStartWithoutCacheStaysEmpty() async {
@@ -65,6 +66,7 @@ final class PolicyControllerTests: XCTestCase {
         XCTAssertNil(rig.holder.engine())
         let version = await rig.controller.currentVersion()
         XCTAssertEqual(version, 0)
+        XCTAssertEqual(rig.cache.count.withLock { $0 }, 0)
     }
 
     func testCorruptCacheAllowsAndKeepsRunning() async throws {
@@ -73,6 +75,7 @@ final class PolicyControllerTests: XCTestCase {
         await rig.controller.start()
         XCTAssertNil(rig.holder.engine())
         XCTAssertFalse(rig.log.lines.withLock { $0 }.isEmpty)
+        XCTAssertEqual(rig.cache.count.withLock { $0 }, 0)
     }
 
     func testApplyPersistsAndClearsCache() async throws {
