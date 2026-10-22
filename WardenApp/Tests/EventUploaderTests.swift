@@ -192,4 +192,36 @@ final class EventUploaderTests: XCTestCase {
         let pending = await rig.uploader.pendingCount
         XCTAssertEqual(pending, 0)
     }
+
+    private static func firstDrained(_ uploader: EventUploader, count: Int) async -> [AccessEvent] {
+        var result: [AccessEvent] = []
+        for await event in uploader.drained {
+            result.append(event)
+            if result.count == count {
+                break
+            }
+        }
+        return result
+    }
+
+    func testPublishesDrainedEvents() async {
+        let rig = Rig()
+        let sent = Self.events(3)
+        rig.link.enqueue(sent)
+        await rig.uploader.flushNow()
+        let drained = await Self.firstDrained(rig.uploader, count: 3)
+        XCTAssertEqual(drained, sent)
+    }
+
+    func testPublishesDrainedEventsEvenWhenUploadFails() async {
+        let rig = Rig()
+        let sent = Self.events(2)
+        rig.link.enqueue(sent)
+        rig.api.setPostHandler { _ in throw AgentAPIError.transport }
+        await rig.uploader.flushNow()
+        let drained = await Self.firstDrained(rig.uploader, count: 2)
+        XCTAssertEqual(drained, sent)
+        let pending = await rig.uploader.pendingCount
+        XCTAssertEqual(pending, 2)
+    }
 }

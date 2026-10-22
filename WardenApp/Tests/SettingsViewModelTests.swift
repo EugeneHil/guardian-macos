@@ -205,4 +205,22 @@ final class SettingsViewModelTests: XCTestCase {
         let awaiting = await makeModel(sync: .extensionUnavailable(version: 3), ext: .awaitingApproval)
         XCTAssertNil(awaiting.fullDiskAccessHint)
     }
+
+    func testFreshFormShowsNoIssuesButCannotSave() {
+        let rig = makeRig()
+        XCTAssertTrue(rig.model.issues.isEmpty)
+        XCTAssertFalse(rig.model.canSave)
+    }
+
+    func testIssuesAppearAfterEditing() {
+        let rig = makeRig()
+        rig.model.pinText = "x"
+        XCTAssertFalse(rig.model.issues.isEmpty)
+    }
+
+    func testIssuesAppearAfterSaveAttempt() async {
+        let rig = makeRig()
+        await rig.model.save()
+        XCTAssertFalse(rig.model.issues.isEmpty)
+    }
 }

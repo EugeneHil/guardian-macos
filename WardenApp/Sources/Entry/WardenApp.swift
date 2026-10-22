@@ -41,6 +41,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_: Notification) {
         environment.start()
     }
+
+    func applicationWillTerminate(_: Notification) {
+        environment.stop()
+    }
 }
 
 /// Hands the scene's `openWindow` action to the environment's window router, then shows the popover.

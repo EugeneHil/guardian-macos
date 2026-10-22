@@ -5,19 +5,21 @@ import Observation
 @MainActor @Observable
 final class SettingsViewModel {
     var serverURLText: String {
-        didSet { saveFailure = nil }
+        didSet { fieldChanged() }
     }
 
     var pinText: String {
-        didSet { saveFailure = nil }
+        didSet { fieldChanged() }
     }
 
     var tokenText = "" {
-        didSet { saveFailure = nil }
+        didSet { fieldChanged() }
     }
 
     private(set) var hasStoredToken = false
     private var saveFailure: String?
+    /// Validation stays quiet on the untouched first-run form until a field is edited or Save is attempted.
+    private var showsValidation = false
     @ObservationIgnored private var isSaving = false
 
     @ObservationIgnored private let store: AppStateStore
@@ -45,7 +47,7 @@ final class SettingsViewModel {
 
     /// User-facing validation messages. Never include field values.
     var issues: [String] {
-        var messages = validation.map(Self.message(for:))
+        var messages = showsValidation ? validation.map(Self.message(for:)) : []
         if let saveFailure {
             messages.append(saveFailure)
         }
@@ -77,6 +79,7 @@ final class SettingsViewModel {
     }
 
     func save() async {
+        showsValidation = true
         guard !isSaving, canSave, let url = URL(string: trimmedURL) else { return }
         isSaving = true
         defer { isSaving = false }
@@ -104,6 +107,11 @@ final class SettingsViewModel {
 
     func uninstallTapped() async {
         await extensionManager.uninstall()
+    }
+
+    private func fieldChanged() {
+        saveFailure = nil
+        showsValidation = true
     }
 
     private var trimmedURL: String {

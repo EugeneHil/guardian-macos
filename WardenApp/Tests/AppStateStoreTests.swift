@@ -45,4 +45,53 @@ final class AppStateStoreTests: XCTestCase {
         task.cancel()
         await task.value
     }
+
+    func testMergesDrainedEventsWithoutDuplicates() async {
+        let harness = StoreHarness()
+        let store = harness.makeStore()
+        let shared = EventFixture.make(age: 5)
+        let liveOnly = EventFixture.make(age: 3)
+        let drainedOnly = EventFixture.make(age: 8)
+        harness.events.continuation.yield(shared)
+        harness.events.continuation.yield(liveOnly)
+        harness.drained.continuation.yield(shared)
+        harness.drained.continuation.yield(drainedOnly)
+        await harness.settle(store)
+        XCTAssertEqual(store.events.map(\.id), [liveOnly.id, shared.id, drainedOnly.id])
+    }
+
+    func testLateOlderEventIsOrderedByTimestamp() async {
+        let harness = StoreHarness()
+        let store = harness.makeStore()
+        let newer = EventFixture.make(age: 1)
+        let middle = EventFixture.make(age: 50)
+        let older = EventFixture.make(age: 100)
+        harness.events.continuation.yield(older)
+        harness.events.continuation.yield(newer)
+        harness.events.continuation.yield(middle)
+        await harness.settle(store)
+        XCTAssertEqual(store.events.map(\.id), [newer.id, middle.id, older.id])
+    }
+
+    func testEvictsOldestByTimestampAndNeverReadmitsIt() async {
+        let harness = StoreHarness()
+        let store = harness.makeStore()
+        let oldest = EventFixture.make(age: 10000)
+        harness.events.continuation.yield(oldest)
+        let rest = (0 ..< AppStateStore.maxEvents - 1).map { EventFixture.make(age: Double(1000 - $0)) }
+        for event in rest {
+            harness.events.continuation.yield(event)
+        }
+        let newest = EventFixture.make(age: 0)
+        let tooOld = EventFixture.make(age: 20000)
+        harness.events.continuation.yield(newest)
+        harness.events.continuation.yield(oldest)
+        harness.events.continuation.yield(tooOld)
+        await harness.settle(store)
+        XCTAssertEqual(store.events.count, AppStateStore.maxEvents)
+        XCTAssertEqual(store.events.first?.id, newest.id)
+        XCTAssertFalse(store.events.contains { $0.id == oldest.id })
+        XCTAssertFalse(store.events.contains { $0.id == tooOld.id })
+        XCTAssertEqual(store.events.last?.id, rest.first?.id)
+    }
 }

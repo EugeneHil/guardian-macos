@@ -26,7 +26,7 @@
             eventStream.continuation.finish()
             return AppStateStore(
                 sync: syncStream.stream, extensionStates: extStream.stream, events: eventStream.stream,
-                now: { Date() }
+                drained: AsyncStream.makeStream(of: AccessEvent.self).stream, now: { Date() }
             )
         }
 

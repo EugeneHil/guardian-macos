@@ -26,7 +26,9 @@ final class WindowRouter {
 ///
 /// Stream ownership (every `AsyncStream` has exactly one consumer): `PolicySyncService.states` and
 /// `ExtensionManager.states` go to `AppStateStore`; `ExtensionLink.liveEvents()` is called once for the store and
-/// once for `BlockNotifier` (each call returns an independent stream). `EventUploader` drains separately.
+/// once for `BlockNotifier` (each call returns an independent stream); `EventUploader.drained` goes to the store too
+/// (it dedupes by id), so events recorded while the app was not subscribed still show up locally. `BlockNotifier`
+/// stays live-only, so old blocks are never notified again.
 @MainActor
 final class AppEnvironment {
     let store: AppStateStore
@@ -57,7 +59,8 @@ final class AppEnvironment {
         let extensionManager = ExtensionManager()
         let windows = WindowRouter()
         let store = AppStateStore(
-            sync: sync.states, extensionStates: extensionManager.states, events: link.liveEvents(), now: now
+            sync: sync.states, extensionStates: extensionManager.states, events: link.liveEvents(),
+            drained: uploader.drained, now: now
         )
 
         self.store = store
@@ -80,8 +83,7 @@ final class AppEnvironment {
         eventsViewModel = EventsViewModel(store: store, now: now)
     }
 
-    /// Starts every long-running service under one parent task, which ends when the app is about to terminate
-    /// (or `stop()` is called). Calling it again while running does nothing.
+    /// Starts every long-running service under one parent task. Calling it again while running does nothing.
     func start() {
         guard services == nil else { return }
         let sync = sync
@@ -98,20 +100,13 @@ final class AppEnvironment {
                 group.addTask { await notifier.run(events: notifierEvents) }
                 group.addTask { await notifier.poster.requestAuthorization() }
                 group.addTask { await manager.refresh() }
-                await Self.untilTermination()
-                group.cancelAll()
             }
         }
     }
 
+    /// Cancels the services (called from `applicationWillTerminate`). The single-consumer streams cannot be
+    /// iterated again, so a stopped environment is not restarted: `start()` after `stop()` does nothing.
     func stop() {
         services?.cancel()
-    }
-
-    /// Returns when the app posts `willTerminateNotification` or the calling task is cancelled.
-    private static func untilTermination() async {
-        for await _ in NotificationCenter.default.notifications(named: NSApplication.willTerminateNotification) {
-            return
-        }
     }
 }

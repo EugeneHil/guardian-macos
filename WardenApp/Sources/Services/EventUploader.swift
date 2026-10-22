@@ -7,6 +7,10 @@ actor EventUploader {
     /// Stays under the server's 1 MiB request limit, leaving room for the JSON array framing.
     static let maxBatchBytes = 900 * 1024
 
+    /// Every event drained from the extension, as soon as it is queued for upload (also when the upload later fails).
+    /// Single consumer: `AppStateStore`, which dedupes against live events by id.
+    nonisolated let drained: AsyncStream<AccessEvent>
+    private let drainedContinuation: AsyncStream<AccessEvent>.Continuation
     private let api: any AgentAPI
     private let link: any ExtensionLinking
     private let clock: any Clock<Duration>
@@ -32,6 +36,13 @@ actor EventUploader {
         self.clock = clock
         self.interval = interval
         self.maxPending = maxPending
+        (drained, drainedContinuation) = AsyncStream.makeStream(
+            of: AccessEvent.self, bufferingPolicy: .bufferingNewest(AppStateStore.maxEvents)
+        )
+    }
+
+    deinit {
+        drainedContinuation.finish()
     }
 
     /// Ticks until cancelled. After `unauthorized` nothing is drained or sent until `resume()`.
@@ -71,6 +82,9 @@ actor EventUploader {
             do {
                 let events = try await link.drainEvents(max: Self.maxBatchCount)
                 pending.append(contentsOf: events)
+                for event in events {
+                    drainedContinuation.yield(event)
+                }
                 drained += events.count
                 if events.count < Self.maxBatchCount {
                     break

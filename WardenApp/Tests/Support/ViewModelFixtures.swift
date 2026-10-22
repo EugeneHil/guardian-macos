@@ -81,16 +81,18 @@ final class FakeExtensionManager: ExtensionManaging, Sendable {
     }
 }
 
-/// Controls the three streams an `AppStateStore` consumes.
+/// Controls the four streams an `AppStateStore` consumes.
 struct StoreHarness {
     let sync = AsyncStream.makeStream(of: SyncState.self)
     let ext = AsyncStream.makeStream(of: ExtensionState.self)
     let events = AsyncStream.makeStream(of: AccessEvent.self)
+    let drained = AsyncStream.makeStream(of: AccessEvent.self)
 
     @MainActor
     func makeStore() -> AppStateStore {
         AppStateStore(
-            sync: sync.stream, extensionStates: ext.stream, events: events.stream, now: { EventFixture.now }
+            sync: sync.stream, extensionStates: ext.stream, events: events.stream, drained: drained.stream,
+            now: { EventFixture.now }
         )
     }
 
@@ -100,6 +102,7 @@ struct StoreHarness {
         sync.continuation.finish()
         ext.continuation.finish()
         events.continuation.finish()
+        drained.continuation.finish()
         await store.run()
     }
 }
