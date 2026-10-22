@@ -14,6 +14,7 @@ Requires Xcode 27 and [mise](https://mise.jdx.dev) (pins Tuist), plus `swiftlint
 mise install            # Tuist 4.212.0
 scripts/build.sh        # tuist generate, unsigned xcodebuild into build/, then ad-hoc sign (ADR-0001)
 scripts/test.sh         # unit tests for DlpExtensionTests and WardenAppTests (--coverage adds coverage)
+scripts/coverage.sh     # tests with coverage, then the >= 80 % line gate (scripts/coverage_gate.py)
 scripts/lint.sh         # swiftlint --strict and swiftformat --lint
 ```
 

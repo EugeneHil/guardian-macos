@@ -1,0 +1,49 @@
+import Foundation
+
+/// Served by the system extension; the app connects over the Mach service in `BundleIDs.machService`.
+@objc protocol WardenExtensionXPC {
+    /// Validates and activates a policy (JSON); returns the applied version.
+    func apply(policyData: Data) async throws -> Int64
+    /// Version of the active policy; 0 means none.
+    func currentPolicyVersion() async -> Int64
+    /// Removes and returns up to `max` buffered events as a JSON array of `AccessEvent`.
+    func drainEvents(max: Int) async -> Data
+    /// Registers the app to receive `eventRecorded` callbacks.
+    func subscribe(client: WardenClientXPC) async
+}
+
+/// Served by the app for live event delivery from the extension.
+@objc protocol WardenClientXPC {
+    /// One JSON `AccessEvent`.
+    func eventRecorded(_ eventData: Data) async
+}
+
+extension JSONEncoder {
+    static var xpc: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+}
+
+extension JSONDecoder {
+    static var xpc: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+}
+
+enum XPCCoding {
+    static func encode(_ event: AccessEvent) throws -> Data {
+        try JSONEncoder.xpc.encode(event)
+    }
+
+    static func decode(_ data: Data) throws -> AccessEvent {
+        try JSONDecoder.xpc.decode(AccessEvent.self, from: data)
+    }
+
+    static func decodeList(_ data: Data) throws -> [AccessEvent] {
+        try JSONDecoder.xpc.decode([AccessEvent].self, from: data)
+    }
+}
