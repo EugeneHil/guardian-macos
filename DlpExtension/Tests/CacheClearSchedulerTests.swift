@@ -28,18 +28,34 @@ private final class ScriptedClear: Sendable {
     }
 }
 
+private final class LogSink: Sendable {
+    private let lines = Mutex<[String]>([])
+
+    func append(_ line: String) {
+        lines.withLock { $0.append(line) }
+    }
+
+    var all: [String] {
+        lines.withLock { $0 }
+    }
+}
+
 private struct Harness {
     let scheduler: CacheClearScheduler
     let fake: ScriptedClear
     let clock: ManualClock
+    let logs: LogSink
 }
 
 final class CacheClearSchedulerTests: XCTestCase {
     private func make(_ script: [CacheClearResult] = []) -> Harness {
         let fake = ScriptedClear(script)
         let clock = ManualClock()
-        let scheduler = CacheClearScheduler(clock: clock, log: { _ in }, clear: { fake.clear() })
-        return Harness(scheduler: scheduler, fake: fake, clock: clock)
+        let logs = LogSink()
+        let scheduler = CacheClearScheduler(
+            clock: clock, log: { logs.append($0) }, clear: { fake.clear() }
+        )
+        return Harness(scheduler: scheduler, fake: fake, clock: clock, logs: logs)
     }
 
     func testSuccessClearsOnce() async {
@@ -171,5 +187,36 @@ final class CacheClearSchedulerTests: XCTestCase {
         _ = await calls.next()
         await scheduler.waitUntilIdle()
         XCTAssertEqual(fake.calls, 4)
+    }
+
+    func testPersistentFailureIsLoggedFirstThenRoughlyEveryThirtySeconds() async {
+        let harness = make([.failed, .failed, .failed, .failed])
+        let scheduler = harness.scheduler
+        let fake = harness.fake
+        let clock = harness.clock
+        let logs = harness.logs
+        func failureLines() -> Int {
+            logs.all.filter { $0.contains("failed") }.count
+        }
+        var calls = fake.stream.makeAsyncIterator()
+        scheduler.request()
+        _ = await calls.next()
+        XCTAssertEqual(failureLines(), 1, "the first failure is logged")
+        await clock.waitForSleepers(1)
+        clock.advance(by: .milliseconds(50))
+        _ = await calls.next()
+        XCTAssertEqual(failureLines(), 1, "a repeat within 30 s is not logged")
+        await clock.waitForSleepers(1)
+        clock.advance(by: .seconds(31))
+        _ = await calls.next()
+        XCTAssertEqual(failureLines(), 2, "a failure 30 s after the last line is logged again")
+        await clock.waitForSleepers(1)
+        clock.advance(by: .seconds(1))
+        _ = await calls.next()
+        XCTAssertEqual(failureLines(), 2)
+        await clock.waitForSleepers(1)
+        clock.advance(by: .seconds(1))
+        await scheduler.waitUntilIdle()
+        XCTAssertFalse(logs.all.contains { $0.contains("/") }, "no paths")
     }
 }

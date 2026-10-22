@@ -12,7 +12,7 @@ actor EventUploader {
     private let clock: any Clock<Duration>
     private let interval: Duration
     private let maxPending: Int
-    private let log = Logger(subsystem: "com.warden.app", category: "event-upload")
+    private let log = Logger(subsystem: BundleIDs.app, category: "event-upload")
 
     private var pending: [AccessEvent] = []
     private var paused = false

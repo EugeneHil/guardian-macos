@@ -267,4 +267,13 @@ final class PolicySyncServiceTests: XCTestCase {
         let next = await iterator.next()
         XCTAssertEqual(next, .synced(version: 1, at: Self.fixedNow))
     }
+
+    func testStatesStreamKeepsOnlyTheNewestUnconsumedState() async {
+        let rig = Rig()
+        rig.api.script(Self.policy(1))
+        await rig.service.syncNow()
+        var iterator = rig.service.states.makeAsyncIterator()
+        let first = await iterator.next()
+        XCTAssertEqual(first, .synced(version: 1, at: Self.fixedNow))
+    }
 }

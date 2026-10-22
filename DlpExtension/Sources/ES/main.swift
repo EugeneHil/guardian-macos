@@ -9,8 +9,17 @@ import os
 let logger = Logger(subsystem: BundleIDs.app, category: "ext")
 /// Coordinator lines are fixed texts with numbers and verdicts only (no paths), so they are public.
 let coordinatorLog: @Sendable (String) -> Void = { logger.notice("\($0, privacy: .public)") }
-/// Controller lines may carry error descriptions that name file paths.
-let controllerLog: @Sendable (String) -> Void = { logger.notice("\($0, privacy: .private)") }
+/// Controller lines are a fixed text, optionally followed by ": " and an error description that may name file
+/// paths: the fixed part is public, anything after the first ": " stays private.
+let controllerLog: @Sendable (String) -> Void = { line in
+    if let separator = line.range(of: ": ") {
+        let head = String(line[..<separator.lowerBound])
+        let detail = String(line[separator.upperBound...])
+        logger.notice("\(head, privacy: .public): \(detail, privacy: .private)")
+    } else {
+        logger.notice("\(line, privacy: .public)")
+    }
+}
 
 let holder = PolicyHolder()
 let store = PolicyStore(fileURL: URL(fileURLWithPath: "/Library/Application Support/Warden/policy.json"))

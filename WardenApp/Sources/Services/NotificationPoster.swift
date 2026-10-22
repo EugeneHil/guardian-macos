@@ -23,7 +23,7 @@ struct BlockMessage: Equatable, Sendable {
 
 /// Boundary: posts through `UNUserNotificationCenter` (verified in the VM only). Logs never carry paths.
 struct UserNotificationPoster: NotificationPosting {
-    private let log = Logger(subsystem: "com.warden.app", category: "notifications")
+    private let log = Logger(subsystem: BundleIDs.app, category: "notifications")
 
     func requestAuthorization() async {
         do {

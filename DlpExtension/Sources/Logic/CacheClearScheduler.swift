@@ -48,11 +48,12 @@ final class CacheClearScheduler: CacheClearing, Sendable {
     private let signal: AsyncStream<Void>.Continuation
     private let worker: Task<Void, Never>
 
-    init(
-        clock: any Clock<Duration> = ContinuousClock(), initialBackoff: Duration = .milliseconds(50),
-        maxBackoff: Duration = .seconds(1), log: @escaping @Sendable (String) -> Void,
+    init<C: Clock>(
+        clock: C = ContinuousClock(), initialBackoff: Duration = .milliseconds(50),
+        maxBackoff: Duration = .seconds(1), failureLogInterval: Duration = .seconds(30),
+        log: @escaping @Sendable (String) -> Void,
         clear: @escaping @Sendable () -> CacheClearResult
-    ) {
+    ) where C.Duration == Duration {
         let (signals, signal) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
         self.signal = signal
         let sleep = Self.sleeper(on: clock)
@@ -63,7 +64,17 @@ final class CacheClearScheduler: CacheClearing, Sendable {
                 while shared.takePending() {
                     var backoff = initialBackoff
                     var attempts = 1
-                    while clear() != .cleared {
+                    var lastFailureLog: C.Instant?
+                    while true {
+                        let result = clear()
+                        if result == .cleared {
+                            break
+                        }
+                        let due = lastFailureLog.map { $0.duration(to: clock.now) >= failureLogInterval } ?? true
+                        if result == .failed, due {
+                            lastFailureLog = clock.now
+                            log("ES cache clear failed (attempt \(attempts)); retrying")
+                        }
                         do {
                             try await sleep(backoff)
                         } catch {

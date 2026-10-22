@@ -17,7 +17,7 @@ actor ExtensionManager: ExtensionManaging {
     nonisolated let states: AsyncStream<ExtensionState>
     private let continuation: AsyncStream<ExtensionState>.Continuation
     private var state: ExtensionState = .unknown
-    private let log = Logger(subsystem: "com.warden.app", category: "extension")
+    private let log = Logger(subsystem: BundleIDs.app, category: "extension")
 
     init() {
         (states, continuation) = AsyncStream.makeStream(of: ExtensionState.self, bufferingPolicy: .bufferingNewest(1))
@@ -43,7 +43,8 @@ actor ExtensionManager: ExtensionManaging {
     /// An activation waiting for approval stays pending until the user decides, so this may suspend for long.
     private func run(_ kind: RequestKind) async {
         let delegate = RequestDelegate(kind: kind)
-        // The delegate queue is required by the API; callbacks only yield into the delegate's stream.
+        // `queue: .main` is the sanctioned OSSystemExtensionRequest delegate-queue boundary (no GCD in our code);
+        // callbacks only yield into the delegate's stream.
         let request = switch kind {
         case .activation:
             OSSystemExtensionRequest.activationRequest(forExtensionWithIdentifier: BundleIDs.ext, queue: .main)

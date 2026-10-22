@@ -24,7 +24,7 @@ actor PolicySyncService {
     private let now: @Sendable () -> Date
     private let interval: Duration
     private let continuation: AsyncStream<SyncState>.Continuation
-    private let log = Logger(subsystem: "com.warden.app", category: "policy-sync")
+    private let log = Logger(subsystem: BundleIDs.app, category: "policy-sync")
 
     private var etag: String?
     private var appliedVersion: Int64?
@@ -44,7 +44,7 @@ actor PolicySyncService {
         self.clock = clock
         self.now = now
         self.interval = interval
-        (states, continuation) = AsyncStream.makeStream(of: SyncState.self)
+        (states, continuation) = AsyncStream.makeStream(of: SyncState.self, bufferingPolicy: .bufferingNewest(1))
         continuation.yield(.idle)
     }
 

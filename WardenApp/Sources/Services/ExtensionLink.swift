@@ -42,6 +42,8 @@ actor ExtensionLink: ExtensionLinking {
         try await call { await $0.currentPolicyVersion() }
     }
 
+    /// The extension removes events from its queue before replying, so a late reply after a timeout, cancellation or
+    /// decode failure loses up to 500 events: at-least-once delivery is not guaranteed (peek/ack drain is future work).
     func drainEvents(max: Int) async throws -> [AccessEvent] {
         let data = try await call { await $0.drainEvents(max: max) }
         do {
