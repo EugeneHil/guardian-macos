@@ -250,4 +250,24 @@ final class OpenCoordinatorTests: XCTestCase {
         let event = await events.next()
         XCTAssertEqual(event?.file, path)
     }
+
+    // MARK: - Fast path generation
+
+    func testFastPathDecisionCarriesThePolicyGeneration() throws {
+        let holder = PolicyHolder()
+        let coordinator = OpenCoordinator(
+            holder: holder, resolver: FakeResolver(), events: EventQueue(clock: ManualClock()), log: { _ in }
+        )
+        var path = Fixture.secretFile
+        let before = path.withUTF8 { coordinator.fastPathDecision(UnsafeRawBufferPointer($0)) }
+        XCTAssertTrue(before.allows)
+        XCTAssertEqual(before.generation, holder.generation)
+        XCTAssertEqual(coordinator.policyGeneration, holder.generation)
+
+        try holder.set(policy: WDPolicy(json: Data(Fixture.policy.utf8)))
+        XCTAssertNotEqual(coordinator.policyGeneration, before.generation)
+        let after = path.withUTF8 { coordinator.fastPathDecision(UnsafeRawBufferPointer($0)) }
+        XCTAssertFalse(after.allows)
+        XCTAssertEqual(after.generation, coordinator.policyGeneration)
+    }
 }

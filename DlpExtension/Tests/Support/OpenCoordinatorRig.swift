@@ -149,9 +149,12 @@ struct OpenCoordinatorRig {
 
     func handle(
         file: String = CoordinatorFixture.secretFile, process: ProcessIdentity, responsible: ProcessToken? = nil,
-        remaining: Duration = .milliseconds(100)
+        responsibleIsProcess: Bool = false, remaining: Duration = .milliseconds(100)
     ) {
-        let request = OpenRequest(file: file, process: process, responsible: responsible, remaining: remaining)
+        let request = OpenRequest(
+            file: file, process: process, responsible: responsible, remaining: remaining,
+            responsibleIsProcess: responsibleIsProcess
+        )
         coordinator.handleCandidate(request) { [responses] in responses.respond($0) }
     }
 }

@@ -79,6 +79,33 @@ final class OpenCoordinatorCapTests: XCTestCase {
         XCTAssertEqual(line, "end", "the second candidate was not rejected by the cap")
     }
 
+    func testOverCapLogIsRateLimitedWithSuppressedCount() async throws {
+        let rig = try OpenCoordinatorRig.make(
+            resolver: FakeResolver([Fixture.claudeToken: Fixture.claude], gated: true),
+            maxInFlight: 1
+        )
+        var log = rig.log.lines.makeAsyncIterator()
+        // Long deadline: advancing the clock below must not fire this candidate's watchdog.
+        rig.handle(process: Fixture.node, responsible: Fixture.claudeToken, remaining: .seconds(60))
+        for _ in 0 ..< 5 {
+            rig.handle(process: Fixture.node)
+        }
+        XCTAssertEqual(rig.responses.all, Array(repeating: .allow, count: 5))
+        let first = await log.next()
+        XCTAssertTrue(first?.contains("cap") ?? false, String(describing: first))
+        rig.clock.advance(by: .milliseconds(999))
+        rig.handle(process: Fixture.node)
+        rig.log.add("marker")
+        let next = await log.next()
+        XCTAssertEqual(next, "marker", "at most one over-cap line per second")
+        rig.clock.advance(by: .milliseconds(1))
+        rig.handle(process: Fixture.node)
+        let summary = await log.next()
+        XCTAssertTrue(summary?.contains("cap") ?? false, String(describing: summary))
+        XCTAssertTrue(summary?.contains("5 suppressed") ?? false, String(describing: summary))
+        rig.resolver.release()
+    }
+
     // MARK: - Timestamp
 
     func testEventTimestampIsTakenWhenTheEventArrives() async throws {
