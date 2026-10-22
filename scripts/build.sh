@@ -9,5 +9,5 @@ mkdir -p build
 run_tuist generate --no-open
 xcodebuild -workspace Warden.xcworkspace -scheme WardenApp -configuration Debug -derivedDataPath build \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build >build/build.log 2>&1 \
-  || { grep -E "error:" build/build.log | head -20; exit 1; }
+  || { grep -E "error:" build/build.log | head -20; tail -n 40 build/build.log; exit 1; }
 scripts/sign.sh build/Build/Products/Debug/WardenApp.app

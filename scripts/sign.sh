@@ -5,7 +5,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 app="${1:-build/Build/Products/Debug/WardenApp.app}"
-ext="$app/Contents/Library/SystemExtensions/io.github.eugenehil.warden.ext.systemextension"
+exts=()
+while IFS= read -r found; do exts+=("$found"); done < <(
+  find "$app/Contents/Library/SystemExtensions" -maxdepth 1 -name '*.systemextension')
+if [[ ${#exts[@]} -ne 1 ]]; then
+  echo "expected exactly one .systemextension in $app, found ${#exts[@]}" >&2
+  exit 1
+fi
+ext="${exts[0]}"
 
 codesign --force --sign - --entitlements DlpExtension/DlpExtension.entitlements "$ext"
 codesign --force --sign - --entitlements WardenApp/WardenApp.entitlements "$app"
