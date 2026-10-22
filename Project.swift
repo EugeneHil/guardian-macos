@@ -66,7 +66,11 @@ let project = Project(
             destinations: .macOS,
             product: .unitTests,
             bundleId: "\(appID).tests",
-            sources: ["Shared/**", "WardenApp/Sources/Logic/**", "WardenApp/Tests/**"],
+            sources: [
+                "Shared/**",
+                .glob("WardenApp/Sources/**", excluding: ["WardenApp/Sources/Entry/**", "WardenApp/Sources/Views/**"]),
+                "WardenApp/Tests/**",
+            ],
             dependencies: [.target(name: "CoreBridge")],
             settings: .settings(base: adhoc.merging(["OTHER_LDFLAGS": .string(coreLib)]) { $1 })
         ),
