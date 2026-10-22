@@ -224,4 +224,8 @@ final class EventUploaderTests: XCTestCase {
         let pending = await rig.uploader.pendingCount
         XCTAssertEqual(pending, 2)
     }
+
+    func testDrainedBufferMatchesTheStoreCap() {
+        XCTAssertEqual(EventUploader.drainedBufferSize, AppStateStore.maxEvents)
+    }
 }

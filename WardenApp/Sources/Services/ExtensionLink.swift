@@ -134,7 +134,8 @@ actor ExtensionLink: ExtensionLinking {
     /// never calls the reply), `unavailable` after `callTimeout`, or `CancellationError` when the caller is cancelled.
     /// It never waits for the reply after that (an XPC reply ignores cancellation): a late reply hits the spent gate
     /// and is ignored. The `body` Task itself ends too: the session's service resumes a call whose reply NSXPC drops
-    /// after a connection error (`ReplyBridge`); after a timeout it ends when the reply finally arrives.
+    /// after a connection error (`ReplyBridge`); after a timeout the link drops and invalidates the session, so the
+    /// connection's error handler ends the pending call promptly instead of waiting for a reply.
     private nonisolated func timed<T: Sendable>(
         _ session: any XPCSession, cancellable: Bool, _ body: @escaping XPCCall<T>
     ) async throws -> T {

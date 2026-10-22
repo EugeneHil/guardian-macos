@@ -36,7 +36,7 @@ final class EventRowModelTests: XCTestCase {
     func testAllowedEventShowsOkBadge() {
         let model = EventRowModel(event: event(decision: .allow, ruleId: "r1"), now: now, home: home)
         XCTAssertEqual(model.badge, .ok)
-        XCTAssertEqual(model.badgeText, "Allowed")
+        XCTAssertEqual(model.badgeText, "OK")
     }
 
     func testSubtitleReplacesHomeWithTilde() {

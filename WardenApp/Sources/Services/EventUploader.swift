@@ -6,6 +6,8 @@ actor EventUploader {
     static let maxBatchCount = 500
     /// Stays under the server's 1 MiB request limit, leaving room for the JSON array framing.
     static let maxBatchBytes = 900 * 1024
+    /// Buffer of `drained`; equals `AppStateStore.maxEvents` (the store keeps no more), checked by a test.
+    static let drainedBufferSize = 500
 
     /// Every event drained from the extension, as soon as it is queued for upload (also when the upload later fails).
     /// Single consumer: `AppStateStore`, which dedupes against live events by id.
@@ -37,7 +39,7 @@ actor EventUploader {
         self.interval = interval
         self.maxPending = maxPending
         (drained, drainedContinuation) = AsyncStream.makeStream(
-            of: AccessEvent.self, bufferingPolicy: .bufferingNewest(AppStateStore.maxEvents)
+            of: AccessEvent.self, bufferingPolicy: .bufferingNewest(Self.drainedBufferSize)
         )
     }
 

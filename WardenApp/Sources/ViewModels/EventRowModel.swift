@@ -23,7 +23,7 @@ struct EventRowModel: Identifiable, Equatable {
             badgeText = "Blocked"
         case .allow:
             badge = .ok
-            badgeText = "Allowed"
+            badgeText = "OK"
         }
     }
 

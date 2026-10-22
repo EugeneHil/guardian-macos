@@ -149,4 +149,11 @@ final class PopoverViewModelTests: XCTestCase {
         let notInstalled = await makeModel(sync: .extensionUnavailable(version: 2), ext: .notInstalled)
         XCTAssertNil(notInstalled.fullDiskAccessHint)
     }
+
+    func testUnreachableWithExtensionVersionShowsProtectionActive() async {
+        let model = await makeModel(syncs: [.unreachable(lastVersion: 3)], ext: .active)
+        XCTAssertTrue(model.isProtectionActive)
+        XCTAssertEqual(model.statusTitle, "Protection active")
+        XCTAssertEqual(model.policyLine, "Policy v3 · server unreachable")
+    }
 }

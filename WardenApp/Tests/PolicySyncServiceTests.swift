@@ -277,3 +277,40 @@ final class PolicySyncServiceTests: XCTestCase {
         XCTAssertEqual(first, .synced(version: 1, at: Self.fixedNow))
     }
 }
+
+// MARK: - Server unreachable at startup
+
+extension PolicySyncServiceTests {
+    func testUnreachableAtStartupReportsExtensionVersion() async {
+        let rig = Rig()
+        rig.link.setCurrentVersion(.success(3))
+        rig.api.script(.failure(.transport), .failure(.server(503)))
+        await rig.service.syncNow()
+        await rig.service.syncNow()
+        let state = await rig.service.state
+        XCTAssertEqual(state, .unreachable(lastVersion: 3))
+        XCTAssertEqual(rig.link.applyCalls.count, 0)
+        XCTAssertEqual(rig.link.currentVersionCalls.count, 1, "the extension is asked once")
+    }
+
+    func testUnreachableAtStartupWithEmptyExtensionHasNoVersion() async {
+        let rig = Rig()
+        rig.link.setCurrentVersion(.success(0))
+        rig.api.script(.failure(.pinMismatch))
+        await rig.service.syncNow()
+        await rig.service.syncNow()
+        let state = await rig.service.state
+        XCTAssertEqual(state, .unreachable(lastVersion: nil))
+        XCTAssertEqual(rig.link.currentVersionCalls.count, 1, "the extension is asked once")
+    }
+
+    func testUnreachableAtStartupToleratesLinkFailure() async {
+        let rig = Rig()
+        rig.link.setCurrentVersion(.failure(.unavailable))
+        rig.api.script(.failure(.malformedResponse))
+        await rig.service.syncNow()
+        let state = await rig.service.state
+        XCTAssertEqual(state, .unreachable(lastVersion: nil))
+        XCTAssertEqual(rig.link.applyCalls.count, 0)
+    }
+}
