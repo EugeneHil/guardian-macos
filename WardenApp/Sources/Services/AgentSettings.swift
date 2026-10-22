@@ -19,7 +19,7 @@ struct AgentSettings: Equatable, Sendable {
         if let issue = urlIssue(urlText) {
             issues.append(issue)
         }
-        if Data(base64Encoded: pin)?.count != SPKIPin.digestLength {
+        if !isCanonicalPin(pin) {
             issues.append(.invalidPin)
         }
         if !isValidToken(token) {
@@ -28,8 +28,20 @@ struct AgentSettings: Equatable, Sendable {
         return issues
     }
 
+    /// Base64 of exactly 32 bytes whose canonical re-encoding is identical (no lenient padding bits).
+    private static func isCanonicalPin(_ pin: String) -> Bool {
+        guard let data = Data(base64Encoded: pin), data.count == SPKIPin.digestLength else {
+            return false
+        }
+        return data.base64EncodedString() == pin
+    }
+
     private static func urlIssue(_ text: String) -> SettingsIssue? {
-        guard let url = URL(string: text), let scheme = url.scheme, let host = url.host, !host.isEmpty else {
+        guard let url = URL(string: text), let scheme = url.scheme, let host = url.host, !host.isEmpty,
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
+              let rawPath = URLComponents(string: text)?.path, rawPath.isEmpty || rawPath == "/",
+              !text.contains("?"), !text.contains("#")
+        else {
             return .invalidURL
         }
         return scheme.lowercased() == "https" ? nil : .notHTTPS
@@ -51,30 +63,29 @@ protocol SettingsStoring: Sendable {
     func save(_ settings: AgentSettings)
 }
 
-/// Non-secret settings in the app's `UserDefaults` suite (the token lives in the Keychain).
-final class UserDefaultsSettingsStore: SettingsStoring {
-    static let defaultSuiteName = BundleIDs.app
+/// Non-secret settings in `UserDefaults` (the token lives in the Keychain). The default is `.standard`, which
+/// is the app's own bundle-id domain; `UserDefaults(suiteName:)` must never be given the app's own bundle id.
+/// `@unchecked Sendable`: UserDefaults is documented as thread-safe but not annotated Sendable by the SDK.
+final class UserDefaultsSettingsStore: SettingsStoring, @unchecked Sendable {
     private static let urlKey = "serverURL"
     private static let pinKey = "spkiPin"
 
-    private let suiteName: String
+    private let defaults: UserDefaults
 
-    init(suiteName: String = UserDefaultsSettingsStore.defaultSuiteName) {
-        self.suiteName = suiteName
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    var usesStandardDefaults: Bool {
+        defaults === UserDefaults.standard
     }
 
     func load() -> AgentSettings {
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            return AgentSettings(serverURL: nil, spkiPin: "")
-        }
         let url = defaults.string(forKey: Self.urlKey).flatMap { URL(string: $0) }
         return AgentSettings(serverURL: url, spkiPin: defaults.string(forKey: Self.pinKey) ?? "")
     }
 
     func save(_ settings: AgentSettings) {
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            return
-        }
         defaults.set(settings.serverURL?.absoluteString, forKey: Self.urlKey)
         defaults.set(settings.spkiPin, forKey: Self.pinKey)
     }

@@ -52,19 +52,54 @@ final class AgentSettingsTests: XCTestCase {
         }
     }
 
-    func testUserDefaultsStoreRoundTripsAndDefaultsEmpty() {
+    func testRejectsNonCanonicalBase64Pin() {
+        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+        let canonical = Array(goodPin)
+        XCTAssertEqual(canonical[43], "=")
+        guard let value = alphabet.firstIndex(of: canonical[42]) else { return XCTFail("not base64") }
+        var tampered = canonical
+        tampered[42] = alphabet[value | 1]
+        XCTAssertNotEqual(tampered, canonical)
+        XCTAssertNotNil(Data(base64Encoded: String(tampered)), "premise: Foundation is lenient")
+        XCTAssertEqual(issues(pin: String(tampered)), [.invalidPin])
+        XCTAssertEqual(issues(pin: goodPin + "\n"), [.invalidPin])
+    }
+
+    func testRejectsUnexpectedUrlParts() {
+        let bad = ["https://user@h.test", "https://user:pw@h.test", "https://h.test?a=1", "https://h.test/?"]
+            + ["https://h.test#frag", "https://h.test/api", "https://h.test//"]
+        for url in bad {
+            XCTAssertEqual(issues(url: url), [.invalidURL], url)
+        }
+    }
+
+    func testAcceptsPlainOriginUrls() {
+        for good in [
+            "https://[::1]:8443/",
+            "https://[::1]:8443",
+            "https://h.test/",
+            "https://h.test:8443",
+            "HTTPS://H.test",
+        ] {
+            XCTAssertEqual(issues(url: good), [], good)
+        }
+    }
+
+    func testUserDefaultsStoreRoundTripsAndDefaultsEmpty() throws {
         let suite = "io.github.eugenehil.warden.tests.\(UUID().uuidString)"
-        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-        let store = UserDefaultsSettingsStore(suiteName: suite)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = UserDefaultsSettingsStore(defaults: defaults)
         XCTAssertEqual(store.load(), AgentSettings(serverURL: nil, spkiPin: ""))
         let settings = AgentSettings(serverURL: URL(string: "https://h:1"), spkiPin: goodPin)
         store.save(settings)
-        XCTAssertEqual(UserDefaultsSettingsStore(suiteName: suite).load(), settings)
+        XCTAssertEqual(UserDefaultsSettingsStore(defaults: defaults).load(), settings)
         store.save(AgentSettings(serverURL: nil, spkiPin: ""))
         XCTAssertEqual(store.load(), AgentSettings(serverURL: nil, spkiPin: ""))
     }
 
-    func testDefaultSuiteNameIsAppIdentifier() {
-        XCTAssertEqual(UserDefaultsSettingsStore.defaultSuiteName, BundleIDs.app)
+    func testDefaultInitializerUsesStandardDefaultsNotOwnBundleSuite() {
+        // UserDefaults(suiteName:) with the app's own bundle id is invalid; the default must be .standard.
+        XCTAssertTrue(UserDefaultsSettingsStore().usesStandardDefaults)
     }
 }
