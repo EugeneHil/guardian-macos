@@ -22,6 +22,14 @@ enum KeychainError: Error, Equatable {
 /// re-entering the token always recovers. No `kSecAttrAccessible` is passed: the legacy file keychain has no
 /// accessibility classes (the item is unlocked with the login keychain) and the attribute can fail with errSecParam.
 /// `kSecAttrSynchronizable` stays unset.
+///
+/// Reads stay interactive: there is no warning-free way to suppress the legacy keychain's ACL dialog.
+/// `kSecUseAuthenticationUIFail` is deprecated; its replacement (`kSecUseAuthenticationContext` with
+/// `LAContext.interactionNotAllowed`) and `kSecUseNoAuthenticationUI` apply only to data-protection keychain items
+/// (SecItem.h: "Legacy keychain items will still activate UI if needed"); `kSecUseAuthenticationUISkip` would turn
+/// an unreadable item into errSecItemNotFound (losing the re-enter hint), and `SecKeychainSetUserInteractionAllowed`
+/// is deprecated and process-wide. Callers wrap this store in `CachedSecretStore`, which reads once and retries a
+/// failed read at most once per minute, so a dialog cannot loop with the sync tick.
 final class KeychainSecretStore: SecretStoring {
     static let defaultService = "\(BundleIDs.app).agent-token"
     private static let account = "agent-token"
