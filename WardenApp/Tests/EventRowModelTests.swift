@@ -73,4 +73,50 @@ final class EventRowModelTests: XCTestCase {
         let model = EventRowModel(event: event(process: ""), now: now, home: home)
         XCTAssertEqual(model.title, "Unknown process → \(dotEnv)")
     }
+
+    func testBundleHelperUsesResponsibleName() {
+        let helper = "/Applications/Google Chrome.app/Contents/Frameworks/X.framework/Versions/1/Chrome Renderer"
+        let model = EventRowModel(event: event(process: helper, responsible: chrome), now: now, home: home)
+        XCTAssertEqual(model.title, "Google Chrome → \(dotEnv)")
+    }
+
+    func testCurlFromTerminalKeepsOwnName() {
+        let model = EventRowModel(
+            event: event(
+                process: "/usr/bin/curl",
+                responsible: "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"
+            ),
+            now: now,
+            home: home
+        )
+        XCTAssertEqual(model.title, "curl → \(dotEnv)")
+    }
+
+    func testSameExecutableKeepsOwnName() {
+        let model = EventRowModel(event: event(process: chrome, responsible: chrome), now: now, home: home)
+        XCTAssertEqual(model.title, "Google Chrome → \(dotEnv)")
+    }
+
+    func testRelativeTimeBoundaries() {
+        func text(_ seconds: TimeInterval) -> String {
+            RelativeTime.string(from: now.addingTimeInterval(-seconds), now: now)
+        }
+        XCTAssertEqual(text(59), "59 s ago")
+        XCTAssertEqual(text(60), "1 min ago")
+        XCTAssertEqual(text(3599), "59 min ago")
+        XCTAssertEqual(text(3600), "1 h ago")
+        XCTAssertEqual(text(86399), "23 h ago")
+        XCTAssertEqual(text(86400), "1 d ago")
+        XCTAssertEqual(text(-5), "just now")
+    }
+
+    func testTrailingSlashInHomeIsTrimmed() {
+        let model = EventRowModel(event: event(file: "/Users/eugene/proj/\(dotEnv)"), now: now, home: "/Users/eugene/")
+        XCTAssertEqual(model.subtitle, "~/proj/\(dotEnv) · 12 s ago")
+    }
+
+    func testEmptyFileDoesNotLeaveDanglingArrow() {
+        let model = EventRowModel(event: event(file: ""), now: now, home: home)
+        XCTAssertEqual(model.title, "Google Chrome")
+    }
 }

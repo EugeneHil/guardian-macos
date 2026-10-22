@@ -14,7 +14,7 @@ struct EventRowModel: Identifiable, Equatable {
         id = event.id
         let process = Self.processName(for: event)
         let file = (event.file as NSString).lastPathComponent
-        title = "\(process) → \(file)"
+        title = file.isEmpty ? process : "\(process) → \(file)"
         let path = Self.abbreviate(event.file, home: home)
         subtitle = "\(path) · \(RelativeTime.string(from: event.timestamp, now: now))"
         switch event.decision {
@@ -27,18 +27,33 @@ struct EventRowModel: Identifiable, Equatable {
         }
     }
 
-    /// A helper process is reported under the app that is responsible for it, when that resolves.
+    /// The opener's own name, unless it is a helper of the responsible app: it lives inside the responsible
+    /// process's `*.app/` bundle (as a different executable) or its file name contains "Helper".
     private static func processName(for event: AccessEvent) -> String {
-        for identity in [event.responsible, event.process] {
-            let name = identity.map { ($0.path as NSString).lastPathComponent } ?? ""
-            if !name.isEmpty {
-                return name
-            }
+        let opener = event.process.path
+        let openerName = (opener as NSString).lastPathComponent
+        let responsible = event.responsible?.path ?? ""
+        let responsibleName = (responsible as NSString).lastPathComponent
+        if !responsibleName.isEmpty, isHelper(opener: opener, responsible: responsible) {
+            return responsibleName
         }
-        return unknownProcess
+        return openerName.isEmpty ? unknownProcess : openerName
+    }
+
+    private static func isHelper(opener: String, responsible: String) -> Bool {
+        if (opener as NSString).lastPathComponent.contains("Helper") {
+            return true
+        }
+        guard let bundle = responsible.range(of: ".app/") else { return false }
+        let prefix = String(responsible[..<bundle.upperBound])
+        return opener.hasPrefix(prefix) && opener != responsible
     }
 
     private static func abbreviate(_ path: String, home: String) -> String {
+        var home = home
+        while home.hasSuffix("/") {
+            home.removeLast()
+        }
         guard !home.isEmpty, path == home || path.hasPrefix(home + "/") else { return path }
         return "~" + path.dropFirst(home.count)
     }
