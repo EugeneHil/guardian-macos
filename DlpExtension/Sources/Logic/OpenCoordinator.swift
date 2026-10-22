@@ -35,6 +35,9 @@ struct OpenRequest: Sendable {
     let responsible: ProcessToken?
     /// Time left until the Endpoint Security deadline when the event was received.
     let remaining: Duration
+    /// The responsible process is the opener itself (same audit token): its kernel-sourced identity is used as the
+    /// responsible identity and the resolver is not asked.
+    var responsibleIsProcess = false
 }
 
 enum OpenResponse: Sendable, Equatable {
@@ -80,6 +83,14 @@ final class OpenCoordinator: Sendable {
     /// burst cannot exhaust the cooperative pool and starve the watchdogs.
     private let maxInFlight: Int
     private let inFlight = Mutex(0)
+    /// Time on the injected clock since creation; paces the over-cap log line.
+    private let elapsed: @Sendable () -> Duration
+    private let overCapLog = Mutex(OverCapLog())
+
+    private struct OverCapLog {
+        var lastLogged: Duration?
+        var suppressed = 0
+    }
 
     init(
         holder: PolicyHolder, resolver: any ProcessResolving, events: any EventRecording,
@@ -90,6 +101,7 @@ final class OpenCoordinator: Sendable {
         self.resolver = resolver
         self.events = events
         sleeper = Self.deadlineSleeper(on: clock)
+        elapsed = Self.elapsedSinceNow(of: clock)
         self.maxInFlight = maxInFlight
         self.now = now
         self.log = log
@@ -134,7 +146,7 @@ final class OpenCoordinator: Sendable {
         }
         guard admitted else {
             respond(.allow)
-            log("evaluation cap of \(maxInFlight) in flight reached; allowed an open without evaluating it")
+            logOverCap()
             return
         }
         let gate = ResponseGate(respond)
@@ -155,6 +167,25 @@ final class OpenCoordinator: Sendable {
         }
     }
 
+    /// At most one line per second; the next line reports how many were suppressed in between.
+    private func logOverCap() {
+        let now = elapsed()
+        let suppressed = overCapLog.withLock { state -> Int? in
+            if let last = state.lastLogged, now - last < .seconds(1) {
+                state.suppressed += 1
+                return nil
+            }
+            defer {
+                state.lastLogged = now
+                state.suppressed = 0
+            }
+            return state.suppressed
+        }
+        guard let suppressed else { return }
+        let note = suppressed > 0 ? " (\(suppressed) suppressed since the last report)" : ""
+        log("evaluation cap of \(maxInFlight) in flight reached; allowed an open without evaluating it\(note)")
+    }
+
     /// Frees the evaluation slot; called once per admitted candidate, before its verdict is sent.
     private func finishEvaluation() {
         inFlight.withLock { $0 -= 1 }
@@ -170,7 +201,9 @@ final class OpenCoordinator: Sendable {
             return
         }
         var responsible: ProcessIdentity?
-        if let token = request.responsible {
+        if request.responsibleIsProcess {
+            responsible = request.process
+        } else if let token = request.responsible {
             responsible = await resolver.identity(of: token)
         }
         let decision = engine.evaluate(
@@ -193,6 +226,13 @@ final class OpenCoordinator: Sendable {
                 ruleId: decision.deny ? decision.ruleId : nil
             )
         )
+    }
+
+    private static func elapsedSinceNow<C: Clock>(
+        of clock: C
+    ) -> @Sendable () -> Duration where C.Duration == Duration {
+        let origin = clock.now
+        return { origin.duration(to: clock.now) }
     }
 
     /// Opens the clock existential once; each call of the result reads `now` synchronously.

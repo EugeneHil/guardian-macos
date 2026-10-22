@@ -21,6 +21,10 @@ let coordinator = OpenCoordinator(holder: holder, resolver: resolver, events: qu
 let esClient: EndpointSecurityClient
 do {
     esClient = try EndpointSecurityClient(coordinator: coordinator, log: logger)
+} catch let EndpointSecurityClientError.newClient(result) {
+    let reason = EndpointSecurityClient.describe(result)
+    logger.fault("could not create the Endpoint Security client: \(reason, privacy: .public)")
+    exit(EXIT_FAILURE)
 } catch {
     logger.fault("could not start the Endpoint Security client: \(String(describing: error), privacy: .public)")
     exit(EXIT_FAILURE)

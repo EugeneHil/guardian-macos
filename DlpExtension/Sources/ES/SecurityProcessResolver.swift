@@ -1,51 +1,35 @@
 import Darwin
 import Foundation
 import Security
-import Synchronization
 
 /// Resolves the code-signing identity of a live process (the responsible process of an `AUTH_OPEN`).
 ///
 /// Every step is a short synchronous libproc/Security call without signature validation, and any failure returns
-/// `nil` at once. Results (failures included) are cached per process instance. Lookups that miss the cache run one
-/// at a time on `Inspector`, so the blocking calls can hold at most one cooperative-pool thread and the
-/// coordinator's watchdogs always find a free one; other callers suspend instead of blocking.
+/// `nil` at once. Results are cached per process instance (failures only briefly, see `ProcessIdentityCache`).
+/// Lookups that miss the cache run one at a time on `Inspector`, so the blocking calls can hold at most one
+/// cooperative-pool thread and the coordinator's watchdogs always find a free one; other callers suspend instead
+/// of blocking.
 final class SecurityProcessResolver: ProcessResolving {
-    private static let cacheLimit = 1024
-
     private actor Inspector {
         func lookUp(_ token: ProcessToken, in resolver: SecurityProcessResolver) -> ProcessIdentity? {
             // A caller queued behind the same token finds the result of the lookup that ran first.
-            if let hit = resolver.cached(token) {
+            if let hit = resolver.cache.lookup(token) {
                 return hit
             }
             let identity = SecurityProcessResolver.lookUp(token)
-            resolver.store(identity, for: token)
+            resolver.cache.store(identity, for: token)
             return identity
         }
     }
 
-    private let cache = Mutex<[ProcessToken: ProcessIdentity?]>([:])
+    private let cache = ProcessIdentityCache()
     private let inspector = Inspector()
 
     func identity(of token: ProcessToken) async -> ProcessIdentity? {
-        if let hit = cached(token) {
+        if let hit = cache.lookup(token) {
             return hit
         }
         return await inspector.lookUp(token, in: self)
-    }
-
-    /// `.some(nil)` is a cached failure; `nil` means not cached.
-    private func cached(_ token: ProcessToken) -> ProcessIdentity?? {
-        cache.withLock { $0[token] }
-    }
-
-    private func store(_ identity: ProcessIdentity?, for token: ProcessToken) {
-        cache.withLock { cache in
-            if cache.count >= Self.cacheLimit {
-                cache.removeAll(keepingCapacity: true)
-            }
-            cache[token] = .some(identity)
-        }
     }
 
     /// Code object first (bound to the exact process instance when the audit token is known), then the path by pid,
