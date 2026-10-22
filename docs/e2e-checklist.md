@@ -6,7 +6,7 @@ Run in the macOS VM described in [vm-setup.md](vm-setup.md), once per release. C
 
 ## 1. VM preparation
 
-- [ ] Roll the guest back to snapshot `es-ready` (see vm-setup.md). Expected: `csrutil status` says disabled, `nvram boot-args` shows `amfi_get_out_of_my_way=1`, `systemextensionsctl developer` says on.
+- [ ] Roll the guest back to snapshot `es-ready` (see vm-setup.md). Expected: `csrutil status` says disabled, `nvram boot-args` shows `amfi_get_out_of_my_way=1`, `systemextensionsctl developer` prints `Developer mode: on`.
 - [ ] The guest has at least 2 vCPU (design section 7).
 
 ## 2. Build and sign
@@ -18,7 +18,7 @@ Run in the macOS VM described in [vm-setup.md](vm-setup.md), once per release. C
 
 - [ ] In the app, install the extension. Expected: System Settings asks for approval.
 - [ ] Approve in System Settings, Login Items & Extensions, Endpoint Security Extensions.
-- [ ] Grant Full Disk Access to the app (System Settings, Privacy & Security).
+- [ ] Grant Full Disk Access per [vm-setup.md](vm-setup.md). Whether the app (as opposed to the extension) strictly needs it is confirmed in ADR-0001 after the VM run.
 - [ ] `systemextensionsctl list`. Expected: the Warden extension shows `[activated enabled]`.
 
 ## 4. Settings
@@ -60,7 +60,7 @@ Extension and Endpoint Security:
 - [ ] 9. `es_new_client` failure without Full Disk Access: fault log, respawn cadence, recovery after the grant.
 - [ ] 10. `/Library/Application Support/Warden` is root 0700 and `policy.json` is 0600; leftover `.policy.json.*.tmp` files are removed on start.
 - [ ] 11. The NSXPC listener accepts the app and nothing else.
-- [ ] 12. `es_set_deadline_miss_mode` reads back FAIL_OPEN on macOS 27. Note: CI builds with an older SDK, so the symbol is resolved at runtime via `dlsym`.
+- [ ] 12. `es_set_deadline_miss_mode` reads back FAIL_OPEN on macOS 27. Note: the symbol is absent from older SDKs, so it is resolved at runtime via `dlsym`.
 - [ ] 13. Fast-path and deadline measurements: record typical and worst-case response time for a fast-path allow and for a candidate evaluation.
 - [ ] 14. With `policy.json` in place, `kill -9` the extension and immediately `cat` the protected file. Expected: denied (cache cleared after the cached policy is installed).
 - [ ] 15. `kill -9` the app while events flow. Expected: the extension keeps forwarding; the restarted app receives new events.
@@ -89,9 +89,15 @@ UI in the LSUIElement (accessory) app:
 - [ ] 29. The popover closes after opening Settings or All events.
 - [ ] 30. The notification authorization prompt appears for the ad-hoc signed accessory app, and block notifications are delivered. Note: live delivery is best effort, some blocks may not notify.
 
+Settings and upload resilience:
+
+- [ ] 31. After the server answers 401 (token rotated), saving Settings resumes both policy sync and event upload without restarting the app.
+- [ ] 32. Changing only the server URL or pin in Settings does not require re-entering the token when one is stored.
+- [ ] 33. A backlog of 500+ events uploads in several batches and none is lost.
+
 ## 8. Results
 
-Filled by the owner for each release.
+Filled by the owner for each release. Each row cites the checklist item numbers (section 7 numbering) that passed or failed.
 
 | Date | Build (commit/tag) | Pass/fail | Notes |
 |------|--------------------|-----------|-------|
