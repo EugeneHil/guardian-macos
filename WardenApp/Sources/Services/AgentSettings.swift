@@ -37,8 +37,10 @@ struct AgentSettings: Equatable, Sendable {
     }
 
     private static func urlIssue(_ text: String) -> SettingsIssue? {
-        guard let url = URL(string: text), let scheme = url.scheme, let host = url.host, !host.isEmpty,
-              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
+        let forbidden = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
+        guard text.unicodeScalars.allSatisfy({ !forbidden.contains($0) }),
+              let url = URL(string: text), let scheme = url.scheme, let host = url.host, !host.isEmpty,
+              url.user == nil, url.password == nil,
               let rawPath = URLComponents(string: text)?.path, rawPath.isEmpty || rawPath == "/",
               !text.contains("?"), !text.contains("#")
         else {

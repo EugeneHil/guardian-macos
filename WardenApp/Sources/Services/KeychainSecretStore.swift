@@ -8,12 +8,7 @@ enum KeychainError: Error, Equatable {
     case failure(OSStatus)
 
     static func from(_ status: OSStatus) -> KeychainError {
-        switch status {
-        case errSecAuthFailed, errSecInteractionNotAllowed, errSecUserCanceled:
-            .reenterToken(status)
-        default:
-            .failure(status)
-        }
+        SecretStatusPolicy.requiresReentry(status) ? .reenterToken(status) : .failure(status)
     }
 }
 
@@ -23,9 +18,10 @@ enum KeychainError: Error, Equatable {
 /// Uses the legacy file keychain (`kSecUseDataProtectionKeychain: false`): the data-protection keychain needs
 /// team-prefixed entitlements that an ad-hoc build lacks. Consequence: legacy ACLs are bound to the code signature,
 /// so after a rebuild (new cdhash) reads may prompt or fail (errSecAuthFailed / errSecInteractionNotAllowed);
-/// those map to `KeychainError.reenterToken` and the user re-enters the token. The accessibility attribute
-/// (`AfterFirstUnlock`, so the background agent can read while the screen is locked) may be ignored by the
-/// legacy keychain.
+/// those map to `KeychainError.reenterToken`. Saving then deletes the unreadable item and adds a fresh one, so
+/// re-entering the token always recovers. No `kSecAttrAccessible` is passed: the legacy file keychain has no
+/// accessibility classes (the item is unlocked with the login keychain) and the attribute can fail with errSecParam.
+/// `kSecAttrSynchronizable` stays unset.
 final class KeychainSecretStore: SecretStoring {
     static let defaultService = "\(BundleIDs.app).agent-token"
     private static let account = "agent-token"
@@ -63,34 +59,46 @@ final class KeychainSecretStore: SecretStoring {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Decisions live in `SecretStatusPolicy` (tested); this method only executes them.
     func saveToken(_ token: String) async throws {
         let data = Data(token.utf8)
-        if try update(data) {
+        let updateStatus = update(data)
+        switch SecretStatusPolicy.nextStep(afterUpdate: updateStatus) {
+        case .done:
             return
-        }
-        var attributes = baseQuery
-        attributes[kSecValueData] = data
-        attributes[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let addStatus = SecItemAdd(attributes as CFDictionary, nil)
-        if addStatus == errSecSuccess {
-            return
-        }
-        // Lost a race with another writer: the item exists now, so update it once.
-        guard addStatus == errSecDuplicateItem, try update(data) else {
-            throw KeychainError.from(addStatus)
+        case .add:
+            try add(data)
+        case .deleteThenAdd:
+            let deleteStatus = SecItemDelete(baseQuery as CFDictionary)
+            guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
+                throw KeychainError.from(deleteStatus)
+            }
+            try add(data)
+        case .retryUpdateOnce:
+            let retry = update(data)
+            guard retry == errSecSuccess else {
+                throw KeychainError.from(retry)
+            }
+        case .fail:
+            throw KeychainError.from(updateStatus)
         }
     }
 
-    /// Returns false when the item does not exist yet.
-    private func update(_ data: Data) throws -> Bool {
-        let status = SecItemUpdate(baseQuery as CFDictionary, [kSecValueData: data] as CFDictionary)
-        if status == errSecSuccess {
-            return true
+    private func update(_ data: Data) -> OSStatus {
+        SecItemUpdate(baseQuery as CFDictionary, [kSecValueData: data] as CFDictionary)
+    }
+
+    private func add(_ data: Data) throws {
+        var attributes = baseQuery
+        attributes[kSecValueData] = data
+        var status = SecItemAdd(attributes as CFDictionary, nil)
+        if status == errSecDuplicateItem {
+            // Lost a race with another writer: the item exists now, so update it once.
+            status = update(data)
         }
-        if status == errSecItemNotFound {
-            return false
+        guard status == errSecSuccess else {
+            throw KeychainError.from(status)
         }
-        throw KeychainError.from(status)
     }
 
     func deleteToken() async throws {

@@ -73,6 +73,14 @@ final class AgentSettingsTests: XCTestCase {
         }
     }
 
+    func testRejectsWhitespaceAndControlCharactersInUrl() {
+        let bad = [" https://h.test", "https://h.test ", "https://h .test", "https://h.test\n", "\thttps://h.test"]
+            + ["https://h.test\u{0}", "https://h\u{7f}.test", "https://h.test/\r", "https://h\u{a0}.test"]
+        for url in bad {
+            XCTAssertEqual(issues(url: url), [.invalidURL], url.debugDescription)
+        }
+    }
+
     func testAcceptsPlainOriginUrls() {
         for good in [
             "https://[::1]:8443/",
