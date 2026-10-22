@@ -1,7 +1,7 @@
 import Foundation
 
 /// Served by the system extension; the app connects over the Mach service in `BundleIDs.machService`.
-@objc protocol WardenExtensionXPC {
+@objc protocol WardenExtensionXPC: Sendable {
     /// Validates and activates a policy (JSON); returns the applied version.
     func apply(policyData: Data) async throws -> Int64
     /// Version of the active policy; 0 means none.

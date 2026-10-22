@@ -21,6 +21,12 @@ let adhoc: SettingsDictionary = [
 /// Consumers of the CoreBridge static framework link the CMake-built warden-core archive themselves.
 let coreLib = "$(SRCROOT)/build/corecpp/libwarden_core.a -lc++"
 
+/// System frameworks used by the app's services (also compiled into WardenAppTests).
+let appFrameworks: [TargetDependency] = [
+    .sdk(name: "SystemExtensions", type: .framework),
+    .sdk(name: "UserNotifications", type: .framework),
+]
+
 let project = Project(
     name: "Warden",
     targets: [
@@ -35,7 +41,7 @@ let project = Project(
             ]),
             sources: ["WardenApp/Sources/**", "Shared/**"],
             entitlements: .file(path: "WardenApp/WardenApp.entitlements"),
-            dependencies: [.target(name: "DlpExtension")],
+            dependencies: [.target(name: "DlpExtension")] + appFrameworks,
             settings: .settings(base: adhoc)
         ),
         .target(
@@ -71,7 +77,7 @@ let project = Project(
                 .glob("WardenApp/Sources/**", excluding: ["WardenApp/Sources/Entry/**", "WardenApp/Sources/Views/**"]),
                 "WardenApp/Tests/**",
             ],
-            dependencies: [.target(name: "CoreBridge")],
+            dependencies: [.target(name: "CoreBridge")] + appFrameworks,
             settings: .settings(base: adhoc.merging(["OTHER_LDFLAGS": .string(coreLib)]) { $1 })
         ),
         // Hosts the CMake pre-build script alone: its unsandboxed script phase must not share a
