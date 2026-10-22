@@ -64,6 +64,56 @@ final class ExtensionLinkTests: XCTestCase {
         XCTAssertEqual(rig.second.subscribeCalls.count, 1)
     }
 
+    func testConnectionErrorFailsFastWithoutTimeout() async throws {
+        let rig = Rig()
+        rig.first.setFailsViaErrorHandler(true) // e.g. the Mach lookup fails: the extension is not installed
+        do {
+            _ = try await rig.link.currentPolicyVersion()
+            XCTFail("expected unavailable")
+        } catch {
+            XCTAssertEqual(error as? ExtensionLinkError, .unavailable)
+        }
+        let first = try XCTUnwrap(rig.provider.sessions.first)
+        XCTAssertEqual(first.invalidations.count, 1, "a failed connection is dropped")
+        XCTAssertEqual(rig.clock.now.offset, .zero, "no timeout was needed")
+
+        _ = try await rig.link.currentPolicyVersion()
+        rig.second.setFailsViaErrorHandler(true) // the connection fails after subscribing
+        do {
+            _ = try await rig.link.apply(policy: Data("{}".utf8))
+            XCTFail("expected unavailable")
+        } catch {
+            XCTAssertEqual(error as? ExtensionLinkError, .unavailable)
+        }
+        XCTAssertEqual(rig.provider.sessions.count, 2)
+        XCTAssertEqual(rig.provider.sessions.last?.invalidations.count, 1)
+        rig.first.releaseHung()
+        rig.second.releaseHung()
+    }
+
+    func testCancelledCallerThrowsCancellationAndKeepsConnection() async throws {
+        let rig = Rig()
+        _ = try await rig.link.currentPolicyVersion()
+        rig.first.setHangs(true)
+        let call = Task { try await rig.link.apply(policy: Data("{}".utf8)) }
+        await rig.first.hungCalls.wait(for: 1)
+        call.cancel()
+        do {
+            _ = try await call.value
+            XCTFail("expected cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "got \(error)")
+        }
+        let session = try XCTUnwrap(rig.provider.sessions.first)
+        XCTAssertEqual(session.invalidations.count, 0, "cancellation does not drop the connection")
+        rig.first.setHangs(false)
+        rig.first.releaseHung()
+        rig.first.setVersion(4)
+        let version = try await rig.link.currentPolicyVersion()
+        XCTAssertEqual(version, 4)
+        XCTAssertEqual(rig.provider.sessions.count, 1)
+    }
+
     func testInterruptionThrowsThenReconnectsAndResubscribes() async throws {
         let rig = Rig()
         rig.first.setApplyResult(.failure(Self.interrupted()))

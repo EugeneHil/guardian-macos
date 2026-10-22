@@ -9,6 +9,7 @@ final class FakeExtensionService: NSObject, WardenExtensionXPC, Sendable {
         var version: Int64 = 0
         var drainData = Data("[]".utf8)
         var hangs = false
+        var failsViaErrorHandler = false
         var hung: [CheckedContinuation<Void, Never>] = []
         var applied: [Data] = []
         var drainMaxes: [Int] = []
@@ -33,6 +34,16 @@ final class FakeExtensionService: NSObject, WardenExtensionXPC, Sendable {
 
     func setHangs(_ hangs: Bool) {
         state.withLock { $0.hangs = hangs }
+    }
+
+    /// Every call reports a connection error through the proxy's error handler and never replies, like NSXPC does
+    /// when the Mach lookup fails or the connection is interrupted or invalidated.
+    func setFailsViaErrorHandler(_ fails: Bool) {
+        state.withLock { $0.failsViaErrorHandler = fails }
+    }
+
+    var failsViaErrorHandler: Bool {
+        state.withLock { $0.failsViaErrorHandler }
     }
 
     /// Delivers the replies of every hung call (late replies).
@@ -61,6 +72,11 @@ final class FakeExtensionService: NSObject, WardenExtensionXPC, Sendable {
     private func hangIfScripted() async {
         let hangs = state.withLock { $0.hangs }
         guard hangs else { return }
+        await hang()
+    }
+
+    /// Suspends until `releaseHung()`, ignoring cancellation.
+    func hang() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             state.withLock { $0.hung.append(continuation) }
             hungCalls.increment()
@@ -101,8 +117,8 @@ final class FakeXPCSession: XPCSession {
         (stream, continuation) = AsyncStream.makeStream(of: Void.self)
     }
 
-    var service: any WardenExtensionXPC {
-        fake
+    func service(onError: @escaping @Sendable (any Error) -> Void) -> any WardenExtensionXPC {
+        FakeProxy(fake: fake, onError: onError)
     }
 
     func interruptions() -> AsyncStream<Void> {
@@ -160,5 +176,42 @@ final class FakeXPCConnectionProvider: XPCConnectionProviding {
             state.exported.append(client)
             return session
         }
+    }
+}
+
+/// A per-call proxy, like `remoteObjectProxyWithErrorHandler`: connection errors go to `onError`, not to the reply.
+final class FakeProxy: NSObject, WardenExtensionXPC, Sendable {
+    private let fake: FakeExtensionService
+    private let onError: @Sendable (any Error) -> Void
+
+    init(fake: FakeExtensionService, onError: @escaping @Sendable (any Error) -> Void) {
+        self.fake = fake
+        self.onError = onError
+    }
+
+    private func failIfScripted() async {
+        guard fake.failsViaErrorHandler else { return }
+        onError(NSError(domain: NSCocoaErrorDomain, code: NSXPCConnectionInvalid))
+        await fake.hang()
+    }
+
+    func apply(policyData: Data) async throws -> Int64 {
+        await failIfScripted()
+        return try await fake.apply(policyData: policyData)
+    }
+
+    func currentPolicyVersion() async -> Int64 {
+        await failIfScripted()
+        return await fake.currentPolicyVersion()
+    }
+
+    func drainEvents(max: Int) async -> Data {
+        await failIfScripted()
+        return await fake.drainEvents(max: max)
+    }
+
+    func subscribe(client: any WardenClientXPC) async {
+        await failIfScripted()
+        await fake.subscribe(client: client)
     }
 }

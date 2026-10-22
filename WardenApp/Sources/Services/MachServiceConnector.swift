@@ -8,20 +8,48 @@ struct MachServiceConnector: XPCConnectionProviding {
         #"identifier "\#(BundleIDs.ext)""#
     }
 
-    func connect(exporting client: any WardenClientXPC) throws -> any XPCSession {
-        try MachXPCSession(client: client)
+    func connect(exporting client: any WardenClientXPC) -> any XPCSession {
+        MachXPCSession(client: client)
     }
 }
 
 struct XPCProxyUnavailable: Error {}
 
+/// Stand-in when `NSXPCConnection` hands out a proxy of an unexpected type: every call reports `onError` at once
+/// (the gate is resolved by then, so the values returned afterwards are ignored).
+private final class UnavailableService: NSObject, WardenExtensionXPC, Sendable {
+    private let onError: @Sendable (any Error) -> Void
+
+    init(onError: @escaping @Sendable (any Error) -> Void) {
+        self.onError = onError
+    }
+
+    func apply(policyData _: Data) async throws -> Int64 {
+        onError(XPCProxyUnavailable())
+        throw XPCProxyUnavailable()
+    }
+
+    func currentPolicyVersion() async -> Int64 {
+        onError(XPCProxyUnavailable())
+        return 0
+    }
+
+    func drainEvents(max _: Int) async -> Data {
+        onError(XPCProxyUnavailable())
+        return Data()
+    }
+
+    func subscribe(client _: any WardenClientXPC) async {
+        onError(XPCProxyUnavailable())
+    }
+}
+
 /// `@unchecked Sendable`: `NSXPCConnection` is thread-safe but not annotated `Sendable` by the SDK.
 private final class MachXPCSession: XPCSession, @unchecked Sendable {
-    let service: any WardenExtensionXPC
     private let connection: NSXPCConnection
     private let events: AsyncStream<Void>
 
-    init(client: any WardenClientXPC) throws {
+    init(client: any WardenClientXPC) {
         connection = NSXPCConnection(machServiceName: BundleIDs.machService, options: .privileged)
         let remote = NSXPCInterface(with: WardenExtensionXPC.self)
         remote.setInterface(
@@ -39,13 +67,14 @@ private final class MachXPCSession: XPCSession, @unchecked Sendable {
             continuation.yield()
             continuation.finish()
         }
-        // Errors surface as failed replies of the pending calls; the handler itself has nothing to add.
-        guard let proxy = connection.remoteObjectProxyWithErrorHandler({ _ in }) as? any WardenExtensionXPC else {
-            connection.invalidate()
-            throw XPCProxyUnavailable()
-        }
-        service = proxy
         connection.resume()
+    }
+
+    func service(onError: @escaping @Sendable (any Error) -> Void) -> any WardenExtensionXPC {
+        guard let proxy = connection.remoteObjectProxyWithErrorHandler(onError) as? any WardenExtensionXPC else {
+            return UnavailableService(onError: onError)
+        }
+        return proxy
     }
 
     func interruptions() -> AsyncStream<Void> {

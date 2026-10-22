@@ -48,4 +48,16 @@ final class ExtensionStateTests: XCTestCase {
     func testPropertiesActiveIsActive() {
         XCTAssertEqual(ExtensionState.reduce(.unknown, event: .propertiesActive(true)), .active)
     }
+
+    func testFinishedRequestMapsByKind() {
+        XCTAssertEqual(
+            ExtensionRequestEvent.finished(.activation, rebootNeeded: false), .finished(rebootNeeded: false)
+        )
+        XCTAssertEqual(ExtensionRequestEvent.finished(.activation, rebootNeeded: true), .finished(rebootNeeded: true))
+        XCTAssertEqual(ExtensionRequestEvent.finished(.deactivation, rebootNeeded: false), .deactivated)
+        XCTAssertNil(
+            ExtensionRequestEvent.finished(.properties, rebootNeeded: false),
+            "only foundProperties decides the state of a properties request"
+        )
+    }
 }

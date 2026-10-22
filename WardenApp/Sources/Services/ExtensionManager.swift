@@ -13,6 +13,7 @@ protocol ExtensionManaging: Sendable {
 /// Runs `OSSystemExtensionRequest`s and publishes the resulting `ExtensionState` (see `ExtensionState.reduce`).
 /// Boundary: the request delegate is verified in the VM only; the state logic is unit-tested through the reducer.
 actor ExtensionManager: ExtensionManaging {
+    /// Single consumer (an `AsyncStream`): the one view model that shows the extension state.
     nonisolated let states: AsyncStream<ExtensionState>
     private let continuation: AsyncStream<ExtensionState>.Continuation
     private var state: ExtensionState = .unknown
@@ -65,12 +66,6 @@ actor ExtensionManager: ExtensionManaging {
     }
 }
 
-private enum RequestKind: Sendable {
-    case activation
-    case deactivation
-    case properties
-}
-
 /// Turns delegate callbacks into `ExtensionRequestEvent`s; the stream finishes with the request's final outcome.
 private final class RequestDelegate: NSObject, OSSystemExtensionRequestDelegate, Sendable {
     let events: AsyncStream<ExtensionRequestEvent>
@@ -94,10 +89,8 @@ private final class RequestDelegate: NSObject, OSSystemExtensionRequestDelegate,
     }
 
     func request(_: OSSystemExtensionRequest, didFinishWithResult result: OSSystemExtensionRequest.Result) {
-        if kind == .deactivation {
-            continuation.yield(.deactivated)
-        } else {
-            continuation.yield(.finished(rebootNeeded: result == .willCompleteAfterReboot))
+        if let event = ExtensionRequestEvent.finished(kind, rebootNeeded: result == .willCompleteAfterReboot) {
+            continuation.yield(event)
         }
         continuation.finish()
     }

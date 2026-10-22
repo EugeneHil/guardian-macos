@@ -3,7 +3,8 @@ import Synchronization
 
 /// One connection to the extension's Mach service.
 protocol XPCSession: Sendable {
-    var service: any WardenExtensionXPC { get }
+    /// A proxy for one call; connection-level failures are reported to `onError` instead of the reply.
+    func service(onError: @escaping @Sendable (any Error) -> Void) -> any WardenExtensionXPC
     /// Yields on interruption or invalidation of the connection; finishes once it is invalidated.
     func interruptions() -> AsyncStream<Void>
     func invalidate()
@@ -53,6 +54,7 @@ actor ExtensionLink: ExtensionLinking {
     /// Live events while a connection is up. Best-effort: events recorded while the app is not subscribed, or dropped
     /// by the extension for a slow client, are only available through `drainEvents`, and live events may duplicate
     /// drained ones (consumers that merge both dedupe by `AccessEvent.id`; the uploader uses `drainEvents` only).
+    /// Each stream lives for the app's lifetime (across reconnects) until its consumer stops iterating.
     nonisolated func liveEvents() -> AsyncStream<AccessEvent> {
         sink.stream()
     }
@@ -71,9 +73,11 @@ actor ExtensionLink: ExtensionLinking {
     private typealias XPCCall<T> = @Sendable (any WardenExtensionXPC) async throws -> T
 
     private func call<T: Sendable>(_ body: @escaping XPCCall<T>) async throws -> T {
-        let (id, service) = try await connectedService()
+        let (id, session) = try await connectedSession()
         do {
-            return try await timed(service, body)
+            return try await timed(session, cancellable: true, body)
+        } catch is CancellationError {
+            throw CancellationError() // the caller gave up; the connection itself is fine
         } catch {
             let mapped = Self.map(error)
             if mapped == .unavailable {
@@ -83,9 +87,9 @@ actor ExtensionLink: ExtensionLinking {
         }
     }
 
-    private func connectedService() async throws -> (Int, any WardenExtensionXPC) {
+    private func connectedSession() async throws -> (Int, any XPCSession) {
         if let current {
-            return (current.id, current.session.service)
+            return (current.id, current.session)
         }
         let session: any XPCSession
         do {
@@ -105,12 +109,13 @@ actor ExtensionLink: ExtensionLinking {
         }
         let client = sink
         do {
-            try await timed(session.service) { await $0.subscribe(client: client) }
+            // Not cancellable: a subscription cut short would leave the connection without live events.
+            try await timed(session, cancellable: false) { await $0.subscribe(client: client) }
         } catch {
             drop(id)
             throw ExtensionLinkError.unavailable
         }
-        return (id, session.service)
+        return (id, session)
     }
 
     /// Forgets and invalidates the connection `id` if it is still the current one.
@@ -122,52 +127,107 @@ actor ExtensionLink: ExtensionLinking {
         current.session.invalidate()
     }
 
-    /// Resolves with the reply or with `unavailable` after `callTimeout`, whichever comes first. It does not wait for
-    /// the reply after a timeout (an XPC reply ignores cancellation): the caller drops the connection, which makes the
-    /// pending reply fail, and a late reply hits the already-used gate and is ignored.
+    /// Resolves with whichever comes first: the reply, a connection error from the proxy's error handler (NSXPC then
+    /// never calls the reply), `unavailable` after `callTimeout`, or `CancellationError` when the caller is cancelled.
+    /// It never waits for the reply after that (an XPC reply ignores cancellation): a late reply hits the spent gate
+    /// and is ignored. Known leak, accepted: the Shared protocols are `async`, so when NSXPC reports an error instead
+    /// of replying, the Task bridging the async call stays suspended for the life of the process.
     private nonisolated func timed<T: Sendable>(
-        _ service: any WardenExtensionXPC, _ body: @escaping XPCCall<T>
+        _ session: any XPCSession, cancellable: Bool, _ body: @escaping XPCCall<T>
     ) async throws -> T {
         let clock = clock
         let timeout = callTimeout
-        return try await withCheckedThrowingContinuation { continuation in
-            let gate = ResumeGate(continuation)
-            let timer = Task {
-                do {
-                    try await clock.sleep(for: timeout)
-                } catch {
-                    return
+        let gate = ResumeGate<T>()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                guard gate.arm(continuation) else { return } // cancelled before the call was sent
+                gate.setTimer(Task {
+                    do {
+                        try await clock.sleep(for: timeout)
+                    } catch {
+                        return
+                    }
+                    gate.resume(with: .failure(ExtensionLinkError.unavailable))
+                })
+                let service = session.service(onError: { gate.resume(with: .failure($0)) })
+                Task {
+                    let result: Result<T, any Error>
+                    do {
+                        result = try await .success(body(service))
+                    } catch {
+                        result = .failure(error)
+                    }
+                    gate.resume(with: result)
                 }
-                gate.resume(with: .failure(ExtensionLinkError.unavailable))
             }
-            Task {
-                let result: Result<T, any Error>
-                do {
-                    result = try await .success(body(service))
-                } catch {
-                    result = .failure(error)
-                }
-                timer.cancel()
-                gate.resume(with: result)
+        } onCancel: {
+            if cancellable {
+                gate.resume(with: .failure(CancellationError()))
             }
         }
     }
 }
 
-/// Resumes a continuation at most once; later results are ignored.
+/// Resumes a continuation at most once; later results are ignored. A result that arrives before the continuation is
+/// armed (an immediate cancellation) is kept and delivered on `arm`. Resolving cancels the timer first, so no sleeper
+/// outlives the call.
 private final class ResumeGate<T: Sendable>: Sendable {
-    private let continuation: Mutex<CheckedContinuation<T, any Error>?>
+    private struct State {
+        var continuation: CheckedContinuation<T, any Error>?
+        var early: Result<T, any Error>?
+        var timer: Task<Void, Never>?
+        var resolved = false
+    }
 
-    init(_ continuation: CheckedContinuation<T, any Error>) {
-        self.continuation = Mutex(continuation)
+    private let state = Mutex(State())
+
+    /// Returns false when the gate was already resolved (the continuation is then resumed at once).
+    func arm(_ continuation: CheckedContinuation<T, any Error>) -> Bool {
+        let early = state.withLock { state -> Result<T, any Error>? in
+            if let early = state.early {
+                state.early = nil
+                return early
+            }
+            state.continuation = continuation
+            return nil
+        }
+        if let early {
+            continuation.resume(with: early)
+            return false
+        }
+        return true
+    }
+
+    func setTimer(_ timer: Task<Void, Never>) {
+        let resolved = state.withLock { state -> Bool in
+            if !state.resolved {
+                state.timer = timer
+            }
+            return state.resolved
+        }
+        if resolved {
+            timer.cancel()
+        }
     }
 
     func resume(with result: Result<T, any Error>) {
-        let pending = continuation.withLock { stored -> CheckedContinuation<T, any Error>? in
-            defer { stored = nil }
-            return stored
+        let (continuation, timer) = state.withLock { state -> (
+            CheckedContinuation<T, any Error>?,
+            Task<Void, Never>?
+        ) in
+            guard !state.resolved else { return (nil, nil) }
+            state.resolved = true
+            defer {
+                state.continuation = nil
+                state.timer = nil
+            }
+            if state.continuation == nil {
+                state.early = result
+            }
+            return (state.continuation, state.timer)
         }
-        pending?.resume(with: result)
+        timer?.cancel()
+        continuation?.resume(with: result)
     }
 }
 

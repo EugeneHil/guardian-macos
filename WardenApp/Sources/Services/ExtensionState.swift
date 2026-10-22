@@ -48,3 +48,23 @@ enum ExtensionRequestEvent: Equatable, Sendable {
     /// A properties request found an enabled (true) or no enabled (false) extension.
     case propertiesActive(Bool)
 }
+
+enum RequestKind: Sendable {
+    case activation
+    case deactivation
+    case properties
+}
+
+extension ExtensionRequestEvent {
+    /// Event for a request that finished; nil for a properties request, whose state only `foundProperties` decides.
+    static func finished(_ kind: RequestKind, rebootNeeded: Bool) -> ExtensionRequestEvent? {
+        switch kind {
+        case .activation:
+            .finished(rebootNeeded: rebootNeeded)
+        case .deactivation:
+            .deactivated
+        case .properties:
+            nil
+        }
+    }
+}
