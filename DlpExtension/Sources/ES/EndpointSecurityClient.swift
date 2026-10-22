@@ -104,11 +104,7 @@ final class EndpointSecurityClient: CacheClearing, Sendable {
             throw EndpointSecurityClientError.newClient(result)
         }
         do {
-            if #available(macOS 27, *) {
-                // Where supported, a missed deadline allows the open instead of killing the extension.
-                let mode = es_set_deadline_miss_mode(created, ES_DEADLINE_MISS_MODE_FAIL_OPEN)
-                log.notice("es_set_deadline_miss_mode(FAIL_OPEN) returned \(mode.rawValue, privacy: .public)")
-            }
+            Self.failOpenOnDeadlineMiss(created, log: log)
             var own = try Self.ownAuditToken()
             guard es_mute_process(created, &own) == ES_RETURN_SUCCESS else { throw EndpointSecurityClientError.mute }
             var events = [ES_EVENT_TYPE_AUTH_OPEN]
@@ -129,6 +125,23 @@ final class EndpointSecurityClient: CacheClearing, Sendable {
     /// Only requests the clear; the scheduler performs it and retries while the kernel throttles.
     func clearCache() {
         scheduler.request()
+    }
+
+    /// `es_deadline_miss_mode_t` mirrored from the macOS 27 SDK (`ESTypes.h`): KILL = 0 (default), FAIL_CLOSED = 1,
+    /// FAIL_OPEN = 2. The enum and `es_set_deadline_miss_mode` are missing from older SDKs, so the function is
+    /// resolved at runtime and the constant is defined here instead of referencing the SDK symbols.
+    private static let deadlineMissModeFailOpen: UInt32 = 2
+
+    /// Where the running system has it, a missed deadline allows the open instead of killing the extension.
+    private static func failOpenOnDeadlineMiss(_ client: OpaquePointer, log: Logger) {
+        typealias SetDeadlineMissMode = @convention(c) (OpaquePointer, UInt32) -> es_return_t
+        guard let address = RuntimeSymbol.address(of: "es_set_deadline_miss_mode") else {
+            log.notice("es_set_deadline_miss_mode is not available; keeping the default KILL deadline miss mode")
+            return
+        }
+        let setMode = unsafeBitCast(address, to: SetDeadlineMissMode.self)
+        let mode = setMode(client, deadlineMissModeFailOpen)
+        log.notice("es_set_deadline_miss_mode(FAIL_OPEN) returned \(mode.rawValue, privacy: .public)")
     }
 
     /// Human-readable reason for an `es_new_client` failure (logged before the extension exits).
