@@ -29,14 +29,14 @@ struct AgentSettings: Equatable, Sendable {
     }
 
     /// Base64 of exactly 32 bytes whose canonical re-encoding is identical (no lenient padding bits).
-    private static func isCanonicalPin(_ pin: String) -> Bool {
+    static func isCanonicalPin(_ pin: String) -> Bool {
         guard let data = Data(base64Encoded: pin), data.count == SPKIPin.digestLength else {
             return false
         }
         return data.base64EncodedString() == pin
     }
 
-    private static func urlIssue(_ text: String) -> SettingsIssue? {
+    static func urlIssue(_ text: String) -> SettingsIssue? {
         let forbidden = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
         guard text.unicodeScalars.allSatisfy({ !forbidden.contains($0) }),
               let url = URL(string: text), let scheme = url.scheme, let host = url.host, !host.isEmpty,
@@ -50,7 +50,7 @@ struct AgentSettings: Equatable, Sendable {
     }
 
     /// `^wdn_[0-9a-f]{64}$`, checked byte-wise so a trailing newline cannot slip through.
-    private static func isValidToken(_ token: String) -> Bool {
+    static func isValidToken(_ token: String) -> Bool {
         let prefix = Array("wdn_".utf8)
         let bytes = Array(token.utf8)
         guard bytes.count == prefix.count + 64, bytes.starts(with: prefix) else {
