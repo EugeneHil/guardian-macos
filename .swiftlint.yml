@@ -8,6 +8,7 @@ included:
 excluded:
   - build
   - Derived
+  - WardenApp/Sources/DesignSystem/Tokens.swift
 disabled_rules:
   - trailing_comma
 opt_in_rules:

@@ -48,3 +48,15 @@ jobs:
         run: python3 -I -B -m unittest discover -s scripts
       - name: Test with coverage gate (>= 80 % lines)
         run: scripts/coverage.sh
+
+  tokens:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Design tokens are up to date
+        run: python3 -I -B scripts/tokens.py --check
