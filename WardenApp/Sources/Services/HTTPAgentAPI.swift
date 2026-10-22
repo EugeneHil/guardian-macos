@@ -7,6 +7,8 @@ struct HTTPAgentAPI: AgentAPI {
     static let policyPath = "/api/v1/policy"
     static let eventsPath = "/api/v1/events"
     static let maxPolicyBytes = 1_048_576
+    /// Server request body limit (`413 payload_too_large` above it).
+    static let maxRequestBytes = 1_048_576
     static let defaultRetryAfterSeconds: Int64 = 60
     static let maxRetryAfterSeconds: Int64 = 3600
 
@@ -45,6 +47,9 @@ struct HTTPAgentAPI: AgentAPI {
         guard let payload = try? AccessEvent.uploadPayload(events) else {
             throw AgentAPIError.invalidBatch
         }
+        guard payload.count <= Self.maxRequestBytes else {
+            throw AgentAPIError.payloadTooLarge
+        }
         request.httpBody = payload
         let (_, response) = try await send(request)
         switch response.statusCode {
@@ -64,8 +69,16 @@ struct HTTPAgentAPI: AgentAPI {
         guard let url = Self.endpoint(current, path: path), AgentSettings.isCanonicalPin(current.spkiPin) else {
             throw AgentAPIError.notConfigured
         }
-        // A Keychain failure (for example a stale ACL after a rebuild) means the token must be entered again.
-        let token = try? await secrets.token()
+        // A Keychain failure (for example a stale ACL after a rebuild) means the token must be entered again;
+        // cancellation stays cancellation.
+        let token: String?
+        do {
+            token = try await secrets.token()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw AgentAPIError.notConfigured
+        }
         guard let token, AgentSettings.isValidToken(token) else {
             throw AgentAPIError.notConfigured
         }
@@ -94,12 +107,11 @@ struct HTTPAgentAPI: AgentAPI {
     private func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
             return try await transport.send(request)
-        } catch let error as AgentAPIError {
-            throw error
-        } catch let error as CancellationError {
-            throw error
         } catch {
-            throw AgentAPIError.transport
+            if error is CancellationError || Task.isCancelled {
+                throw CancellationError()
+            }
+            throw (error as? AgentAPIError) ?? AgentAPIError.transport
         }
     }
 
@@ -109,6 +121,8 @@ struct HTTPAgentAPI: AgentAPI {
         switch response.statusCode {
         case 401:
             .unauthorized
+        case 413:
+            .payloadTooLarge
         case 429:
             .throttled(retryAfter: retryAfter(response.value(forHTTPHeaderField: "Retry-After")))
         default:

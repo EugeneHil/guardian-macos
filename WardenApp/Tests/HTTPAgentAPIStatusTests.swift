@@ -43,11 +43,49 @@ final class HTTPAgentAPIStatusTests: AgentAPITestCase {
     }
 
     func testUnexpectedStatusesMapToServer() async {
-        for status in [204, 302, 404, 405, 413] {
+        for status in [204, 302, 404, 405] {
             await assertFetch(.server(status), status: status)
             await assertPost(.server(status), status: status)
         }
         await assertPost(.server(304), status: 304)
+    }
+
+    func test413IsPayloadTooLarge() async {
+        await assertPost(.payloadTooLarge, status: 413)
+        await assertFetch(.payloadTooLarge, status: 413)
+    }
+
+    // MARK: - Request body limit
+
+    /// Events whose upload payload is exactly `target` bytes (file names padded with ASCII, at most 4096 bytes each).
+    private static func events(encodingTo target: Int) throws -> [AccessEvent] {
+        let count = target / 4000 + 1
+        let base = try AccessEvent.uploadPayload((0 ..< count).map { _ in event(file: "/") }).count
+        var extra = target - base
+        return (0 ..< count).map { _ in
+            let pad = min(extra, 4095)
+            extra -= pad
+            return event(file: "/" + String(repeating: "x", count: pad))
+        }
+    }
+
+    func testPayloadOfExactlyOneMiBIsSent() async throws {
+        let events = try Self.events(encodingTo: 1_048_576)
+        XCTAssertEqual(try AccessEvent.uploadPayload(events).count, 1_048_576)
+        let transport = FakeHTTPTransport(status: 200)
+        try await makeAPI(transport: transport).postEvents(events)
+        let sent = await transport.requests
+        XCTAssertEqual(sent.first?.httpBody?.count, 1_048_576)
+    }
+
+    func testOversizedPayloadIsRejectedWithoutARequest() async throws {
+        let events = try Self.events(encodingTo: 1_048_577)
+        XCTAssertEqual(try AccessEvent.uploadPayload(events).count, 1_048_577)
+        let transport = FakeHTTPTransport(status: 200)
+        let error = await postError(makeAPI(transport: transport), events)
+        XCTAssertEqual(error as? AgentAPIError, .payloadTooLarge)
+        let sent = await transport.requests.count
+        XCTAssertEqual(sent, 0)
     }
 
     // MARK: - Configuration
@@ -159,6 +197,37 @@ final class HTTPAgentAPIStatusTests: AgentAPITestCase {
     func testTransportAgentErrorsPassThrough() async {
         let fetch = await fetchError(makeAPI(transport: FakeHTTPTransport(error: AgentAPIError.malformedResponse)))
         XCTAssertEqual(fetch as? AgentAPIError, .malformedResponse)
+    }
+
+    /// Runs `body` in a task that is cancelled before `body` starts and returns the error it throws.
+    private func errorInCancelledTask(_ body: @escaping @Sendable () async throws -> Void) async -> (any Error)? {
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await body()
+        }
+        if case let .failure(error) = await task.result {
+            return error
+        }
+        return nil
+    }
+
+    func testCancelledTaskSurfacesCancellationNotTransport() async {
+        let api = makeAPI(transport: FakeHTTPTransport(error: URLError(.cancelled)))
+        let fetch = await errorInCancelledTask { _ = try await api.fetchPolicy(etag: nil) }
+        XCTAssertTrue(fetch is CancellationError, "\(String(describing: fetch))")
+        let post = await errorInCancelledTask { try await api.postEvents([Self.event()]) }
+        XCTAssertTrue(post is CancellationError, "\(String(describing: post))")
+    }
+
+    func testCancelledSecretReadIsNotNotConfigured() async {
+        let transport = FakeHTTPTransport(status: 304)
+        let api = makeAPI(secrets: FailingSecretStore(error: CancellationError()), transport: transport)
+        let fetch = await fetchError(api)
+        XCTAssertTrue(fetch is CancellationError, "\(String(describing: fetch))")
+        let post = await postError(api)
+        XCTAssertTrue(post is CancellationError, "\(String(describing: post))")
+        let sent = await transport.requests.count
+        XCTAssertEqual(sent, 0)
     }
 
     func testCancellationErrorPropagates() async {

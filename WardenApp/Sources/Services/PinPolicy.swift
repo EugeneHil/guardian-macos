@@ -8,13 +8,14 @@ enum PinPolicy {
         case accept
         /// Server-trust challenge with a missing or different pin: cancel and report `pinMismatch`.
         case rejectPin
-        /// Any other authentication method: cancel (the agent never answers Basic, client-certificate, ...).
-        case cancel
+        /// Any other authentication method: reject the protection space (the agent never answers Basic,
+        /// client-certificate, ...), so a 401 arrives as an HTTP response.
+        case rejectProtectionSpace
     }
 
     static func decide(authenticationMethod: String, leafPin: String?, expectedPin: String) -> Decision {
         guard authenticationMethod == NSURLAuthenticationMethodServerTrust else {
-            return .cancel
+            return .rejectProtectionSpace
         }
         guard let leafPin, !expectedPin.isEmpty, SPKIPin.matches(leafPin, expectedPin) else {
             return .rejectPin

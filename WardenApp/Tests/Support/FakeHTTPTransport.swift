@@ -35,10 +35,12 @@ actor FakeHTTPTransport: HTTPTransport {
     }
 }
 
-/// A secret store whose reads always fail, like a Keychain item with a stale ACL.
+/// A secret store whose reads always fail, by default like a Keychain item with a stale ACL.
 struct FailingSecretStore: SecretStoring {
+    var error: any Error & Sendable = KeychainError.reenterToken(-25293)
+
     func token() async throws -> String? {
-        throw KeychainError.reenterToken(-25293)
+        throw error
     }
 
     func saveToken(_: String) async throws {}

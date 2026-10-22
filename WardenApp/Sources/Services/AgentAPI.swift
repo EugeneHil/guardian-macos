@@ -14,7 +14,9 @@ enum AgentAPIError: Error, Equatable {
     case unauthorized
     case throttled(retryAfter: Duration)
     case invalidBatch
-    /// Any status the contract does not map otherwise (5xx, and unexpected statuses such as 404 or 413).
+    /// The request body is over the server's 1 MiB limit (`413`, or caught before sending): split the batch.
+    case payloadTooLarge
+    /// Any status the contract does not map otherwise (5xx, and unexpected statuses such as 404 or 405).
     case server(Int)
     case transport
     case pinMismatch

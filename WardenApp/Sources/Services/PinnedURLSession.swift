@@ -59,13 +59,17 @@ struct PinnedURLSession: HTTPTransport {
         return prepared
     }
 
-    /// A failure after a recorded pin rejection is `pinMismatch` (the cancelled challenge surfaces as
-    /// `URLError.cancelled`); every other `URLError` or unknown error is `transport`.
+    /// Task cancellation stays `CancellationError`. Otherwise a failure after a recorded pin rejection is
+    /// `pinMismatch` (the cancelled challenge surfaces as `URLError.cancelled`); every other `URLError` or unknown
+    /// error is `transport`.
     static func mapError(_ error: any Error, pinRejected: Bool) -> any Error {
+        if error is CancellationError || Task.isCancelled {
+            return CancellationError()
+        }
         if pinRejected {
             return AgentAPIError.pinMismatch
         }
-        if error is AgentAPIError || error is CancellationError {
+        if error is AgentAPIError {
             return error
         }
         return AgentAPIError.transport
@@ -131,12 +135,17 @@ final class PinningDelegate: NSObject, URLSessionTaskDelegate, Sendable {
         let leaf = trust.flatMap { (SecTrustCopyCertificateChain($0) as? [SecCertificate])?.first }
         let decision = PinPolicy.decide(authenticationMethod: space.authenticationMethod,
                                         leafPin: leaf.flatMap(SPKIPin.hash(of:)), expectedPin: expectedPin())
-        if decision == .accept, let trust {
+        switch decision {
+        case .accept:
+            guard let trust else {
+                return (.cancelAuthenticationChallenge, nil)
+            }
             return (.useCredential, URLCredential(trust: trust))
-        }
-        if decision == .rejectPin {
+        case .rejectPin:
             rejected.withLock { $0 = true }
+            return (.cancelAuthenticationChallenge, nil)
+        case .rejectProtectionSpace:
+            return (.rejectProtectionSpace, nil)
         }
-        return (.cancelAuthenticationChallenge, nil)
     }
 }

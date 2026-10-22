@@ -49,11 +49,15 @@ final class PinnedURLSessionTests: XCTestCase {
         XCTAssertEqual(PinPolicy.decide(authenticationMethod: trust, leafPin: "", expectedPin: ""), .rejectPin)
     }
 
-    func testPinPolicyCancelsEveryOtherMethod() {
-        let methods = [NSURLAuthenticationMethodHTTPBasic, NSURLAuthenticationMethodClientCertificate,
-                       NSURLAuthenticationMethodDefault, NSURLAuthenticationMethodNTLM, "unknown"]
+    func testPinPolicyRejectsTheProtectionSpaceForEveryOtherMethod() {
+        let methods = [
+            NSURLAuthenticationMethodHTTPBasic, NSURLAuthenticationMethodClientCertificate,
+            NSURLAuthenticationMethodDefault, NSURLAuthenticationMethodNTLM, NSURLAuthenticationMethodNegotiate,
+            NSURLAuthenticationMethodHTTPDigest, NSURLAuthenticationMethodHTMLForm, "Bearer", "unknown",
+        ]
         for method in methods {
-            XCTAssertEqual(PinPolicy.decide(authenticationMethod: method, leafPin: pin, expectedPin: pin), .cancel)
+            XCTAssertEqual(PinPolicy.decide(authenticationMethod: method, leafPin: pin, expectedPin: pin),
+                           .rejectProtectionSpace, method)
         }
     }
 
@@ -119,7 +123,7 @@ final class PinnedURLSessionTests: XCTestCase {
         XCTAssertTrue(delegate.pinRejected)
     }
 
-    func testDelegateCancelsOtherMethodsWithoutRecordingPinRejection() async throws {
+    func testDelegateRejectsOtherProtectionSpacesWithoutRecordingPinRejection() async throws {
         let made = try TestCertificate.make()
         let expected = made.expectedPin
         let delegate = PinningDelegate(expectedPin: { expected })
@@ -129,8 +133,9 @@ final class PinnedURLSessionTests: XCTestCase {
         let space = TrustProtectionSpace(trust: made.trust, method: NSURLAuthenticationMethodHTTPBasic)
         let sessionLevel = await delegate.urlSession(session, didReceive: challenge(space))
         let taskLevel = await delegate.urlSession(session, task: task, didReceive: challenge(space))
-        XCTAssertEqual(sessionLevel.0, .cancelAuthenticationChallenge)
-        XCTAssertEqual(taskLevel.0, .cancelAuthenticationChallenge)
+        XCTAssertEqual(sessionLevel.0, .rejectProtectionSpace)
+        XCTAssertNil(sessionLevel.1)
+        XCTAssertEqual(taskLevel.0, .rejectProtectionSpace)
         XCTAssertNil(taskLevel.1)
         XCTAssertFalse(delegate.pinRejected)
     }
@@ -204,6 +209,28 @@ final class PinnedURLSessionTests: XCTestCase {
         XCTAssertTrue(PinnedURLSession.mapError(CancellationError(), pinRejected: false) is CancellationError)
     }
 
+    private func errorInCancelledTask(_ body: @escaping @Sendable () async throws -> Void) async -> (any Error)? {
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await body()
+        }
+        if case let .failure(error) = await task.result {
+            return error
+        }
+        return nil
+    }
+
+    func testCancelledTaskMapsToCancellationError() async {
+        let error = await errorInCancelledTask {
+            throw PinnedURLSession.mapError(URLError(.cancelled), pinRejected: false)
+        }
+        XCTAssertTrue(error is CancellationError, "\(String(describing: error))")
+        let other = await errorInCancelledTask {
+            throw PinnedURLSession.mapError(URLError(.timedOut), pinRejected: true)
+        }
+        XCTAssertTrue(other is CancellationError, "\(String(describing: other))")
+    }
+
     // MARK: - Body limit
 
     private func bytes(_ count: Int) -> AsyncStream<UInt8> {
@@ -256,6 +283,13 @@ final class PinnedURLSessionTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? AgentAPIError, .transport)
         }
+    }
+
+    func testRealSendInCancelledTaskIsCancellation() async throws {
+        let request = try URLRequest(url: XCTUnwrap(URL(string: "https://127.0.0.1:1/api/v1/policy")))
+        let session = transport()
+        let error = await errorInCancelledTask { _ = try await session.send(request) }
+        XCTAssertTrue(error is CancellationError, "\(String(describing: error))")
     }
 
     func testNonHTTPResponseIsTransportError() async throws {
