@@ -13,37 +13,6 @@ struct MachServiceConnector: XPCConnectionProviding {
     }
 }
 
-struct XPCProxyUnavailable: Error {}
-
-/// Stand-in when `NSXPCConnection` hands out a proxy of an unexpected type: every call reports `onError` at once
-/// (the gate is resolved by then, so the values returned afterwards are ignored).
-private final class UnavailableService: NSObject, WardenExtensionXPC, Sendable {
-    private let onError: @Sendable (any Error) -> Void
-
-    init(onError: @escaping @Sendable (any Error) -> Void) {
-        self.onError = onError
-    }
-
-    func apply(policyData _: Data) async throws -> Int64 {
-        onError(XPCProxyUnavailable())
-        throw XPCProxyUnavailable()
-    }
-
-    func currentPolicyVersion() async -> Int64 {
-        onError(XPCProxyUnavailable())
-        return 0
-    }
-
-    func drainEvents(max _: Int) async -> Data {
-        onError(XPCProxyUnavailable())
-        return Data()
-    }
-
-    func subscribe(client _: any WardenClientXPC) async {
-        onError(XPCProxyUnavailable())
-    }
-}
-
 /// `@unchecked Sendable`: `NSXPCConnection` is thread-safe but not annotated `Sendable` by the SDK.
 private final class MachXPCSession: XPCSession, @unchecked Sendable {
     private let connection: NSXPCConnection
@@ -51,9 +20,11 @@ private final class MachXPCSession: XPCSession, @unchecked Sendable {
 
     init(client: any WardenClientXPC) {
         connection = NSXPCConnection(machServiceName: BundleIDs.machService, options: .privileged)
-        let remote = NSXPCInterface(with: WardenExtensionXPC.self)
+        // The reply-block mirror, not `WardenExtensionXPC` itself: see `WardenExtensionReplyXPC`.
+        let remote = NSXPCInterface(with: WardenExtensionReplyXPC.self)
         remote.setInterface(
-            NSXPCInterface(with: WardenClientXPC.self), for: #selector(WardenExtensionXPC.subscribe(client:)),
+            NSXPCInterface(with: WardenClientXPC.self),
+            for: #selector(WardenExtensionReplyXPC.subscribe(client:reply:)),
             argumentIndex: 0, ofReply: false
         )
         connection.remoteObjectInterface = remote
@@ -71,10 +42,7 @@ private final class MachXPCSession: XPCSession, @unchecked Sendable {
     }
 
     func service(onError: @escaping @Sendable (any Error) -> Void) -> any WardenExtensionXPC {
-        guard let proxy = connection.remoteObjectProxyWithErrorHandler(onError) as? any WardenExtensionXPC else {
-            return UnavailableService(onError: onError)
-        }
-        return proxy
+        ReplyBridge.service(onError: onError) { connection.remoteObjectProxyWithErrorHandler($0) }
     }
 
     func interruptions() -> AsyncStream<Void> {

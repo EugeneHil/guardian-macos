@@ -3,7 +3,8 @@ import Synchronization
 
 /// One connection to the extension's Mach service.
 protocol XPCSession: Sendable {
-    /// A proxy for one call; connection-level failures are reported to `onError` instead of the reply.
+    /// A proxy for one call; connection-level failures are reported to `onError` instead of the reply, and the call
+    /// then returns at once (throwing or with a placeholder value that the caller ignores).
     func service(onError: @escaping @Sendable (any Error) -> Void) -> any WardenExtensionXPC
     /// Yields on interruption or invalidation of the connection; finishes once it is invalidated.
     func interruptions() -> AsyncStream<Void>
@@ -132,8 +133,8 @@ actor ExtensionLink: ExtensionLinking {
     /// Resolves with whichever comes first: the reply, a connection error from the proxy's error handler (NSXPC then
     /// never calls the reply), `unavailable` after `callTimeout`, or `CancellationError` when the caller is cancelled.
     /// It never waits for the reply after that (an XPC reply ignores cancellation): a late reply hits the spent gate
-    /// and is ignored. Known leak, accepted: the Shared protocols are `async`, so when NSXPC reports an error instead
-    /// of replying, the Task bridging the async call stays suspended for the life of the process.
+    /// and is ignored. The `body` Task itself ends too: the session's service resumes a call whose reply NSXPC drops
+    /// after a connection error (`ReplyBridge`); after a timeout it ends when the reply finally arrives.
     private nonisolated func timed<T: Sendable>(
         _ session: any XPCSession, cancellable: Bool, _ body: @escaping XPCCall<T>
     ) async throws -> T {
@@ -173,7 +174,7 @@ actor ExtensionLink: ExtensionLinking {
 /// Resumes a continuation at most once; later results are ignored. A result that arrives before the continuation is
 /// armed (an immediate cancellation) is kept and delivered on `arm`. Resolving cancels the timer first, so no sleeper
 /// outlives the call.
-private final class ResumeGate<T: Sendable>: Sendable {
+final class ResumeGate<T: Sendable>: Sendable {
     private struct State {
         var continuation: CheckedContinuation<T, any Error>?
         var early: Result<T, any Error>?

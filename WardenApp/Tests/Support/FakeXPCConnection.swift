@@ -36,7 +36,7 @@ final class FakeExtensionService: NSObject, WardenExtensionXPC, Sendable {
         state.withLock { $0.hangs = hangs }
     }
 
-    /// Every call reports a connection error through the proxy's error handler and never replies, like NSXPC does
+    /// Every call reports a connection error through the proxy's error handler instead of replying, like NSXPC does
     /// when the Mach lookup fails or the connection is interrupted or invalidated.
     func setFailsViaErrorHandler(_ fails: Bool) {
         state.withLock { $0.failsViaErrorHandler = fails }
@@ -179,7 +179,8 @@ final class FakeXPCConnectionProvider: XPCConnectionProviding {
     }
 }
 
-/// A per-call proxy, like `remoteObjectProxyWithErrorHandler`: connection errors go to `onError`, not to the reply.
+/// A per-call service, like the one `ReplyBridge` builds on `remoteObjectProxyWithErrorHandler`: a connection error
+/// goes to `onError` and the call then returns at once with a placeholder (or throws), never with the reply.
 final class FakeProxy: NSObject, WardenExtensionXPC, Sendable {
     private let fake: FakeExtensionService
     private let onError: @Sendable (any Error) -> Void
@@ -189,29 +190,33 @@ final class FakeProxy: NSObject, WardenExtensionXPC, Sendable {
         self.onError = onError
     }
 
-    private func failIfScripted() async {
-        guard fake.failsViaErrorHandler else { return }
-        onError(NSError(domain: NSCocoaErrorDomain, code: NSXPCConnectionInvalid))
-        await fake.hang()
+    /// Reports a scripted connection error to `onError` and returns it; nil lets the call reach the service.
+    private func failedIfScripted() -> NSError? {
+        guard fake.failsViaErrorHandler else { return nil }
+        let error = NSError(domain: NSCocoaErrorDomain, code: NSXPCConnectionInvalid)
+        onError(error)
+        return error
     }
 
     func apply(policyData: Data) async throws -> Int64 {
-        await failIfScripted()
+        if let error = failedIfScripted() {
+            throw error
+        }
         return try await fake.apply(policyData: policyData)
     }
 
     func currentPolicyVersion() async -> Int64 {
-        await failIfScripted()
+        guard failedIfScripted() == nil else { return 0 }
         return await fake.currentPolicyVersion()
     }
 
     func drainEvents(max: Int) async -> Data {
-        await failIfScripted()
+        guard failedIfScripted() == nil else { return Data() }
         return await fake.drainEvents(max: max)
     }
 
     func subscribe(client: any WardenClientXPC) async {
-        await failIfScripted()
+        guard failedIfScripted() == nil else { return }
         await fake.subscribe(client: client)
     }
 }

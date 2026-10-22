@@ -87,8 +87,6 @@ final class ExtensionLinkTests: XCTestCase {
         }
         XCTAssertEqual(rig.provider.sessions.count, 2)
         XCTAssertEqual(rig.provider.sessions.last?.invalidations.count, 1)
-        rig.first.releaseHung()
-        rig.second.releaseHung()
     }
 
     func testCancelledCallerThrowsCancellationAndKeepsConnection() async throws {
