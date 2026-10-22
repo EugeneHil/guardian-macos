@@ -20,9 +20,40 @@ private final class FakeClient: NSObject, WardenClientXPC, Sendable {
         continuation.yield(eventData)
     }
 
+    /// Next pushed event, or nil after 10 s so a broken forwarder fails the test instead of hanging it.
     func next() async -> Data? {
-        var iterator = stream.makeAsyncIterator()
-        return await iterator.next()
+        await withTaskGroup(of: Data?.self) { group in
+            group.addTask { [stream] in
+                var iterator = stream.makeAsyncIterator()
+                return await iterator.next()
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(10))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+}
+
+/// A peer that never answers: `eventRecorded` suspends until `release()`.
+private final class HangingClient: NSObject, WardenClientXPC, Sendable {
+    private let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    override init() {
+        (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+        super.init()
+    }
+
+    func eventRecorded(_: Data) async {
+        for await _ in stream {}
+    }
+
+    func release() {
+        continuation.finish()
     }
 }
 
@@ -74,6 +105,7 @@ final class ExtensionServiceTests: XCTestCase {
             XCTAssertEqual(nsError.domain, "io.github.eugenehil.warden")
             let lines = nsError.userInfo[WardenXPCError.validationErrorsKey] as? [String]
             XCTAssertFalse(lines?.isEmpty ?? true)
+            XCTAssertEqual(nsError.code, WardenXPCError.invalidPolicyCode)
         }
         let current = await rig.service.currentPolicyVersion()
         XCTAssertEqual(current, 3)
@@ -131,6 +163,58 @@ final class ExtensionServiceTests: XCTestCase {
         let secondData = await second.next()
         XCTAssertEqual(try XPCCoding.decode(XCTUnwrap(firstData)), event(9))
         XCTAssertEqual(try XPCCoding.decode(XCTUnwrap(secondData)), event(9))
+    }
+
+    func testInvalidatedConnectionClientIsRemoved() async throws {
+        let (rig, dir) = try make()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let connectionA = NSObject()
+        let connectionB = NSObject()
+        let gone = FakeClient()
+        let kept = FakeClient()
+        await rig.service.subscribe(client: gone, connectionKey: ObjectIdentifier(connectionA))
+        await rig.service.subscribe(client: kept, connectionKey: ObjectIdentifier(connectionB))
+        var count = await rig.service.subscriberCount()
+        XCTAssertEqual(count, 2)
+        await rig.service.removeClients(connectionKey: ObjectIdentifier(connectionA))
+        count = await rig.service.subscriberCount()
+        XCTAssertEqual(count, 1)
+        await rig.events.record(event(1))
+        let data = await kept.next()
+        XCTAssertEqual(try XPCCoding.decode(XCTUnwrap(data)), event(1))
+    }
+
+    func testResubscribeOnSameConnectionDoesNotDuplicate() async throws {
+        let (rig, dir) = try make()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let connection = NSObject()
+        let key = ObjectIdentifier(connection)
+        let old = FakeClient()
+        let fresh = FakeClient()
+        await rig.service.subscribe(client: old, connectionKey: key)
+        await rig.service.subscribe(client: fresh, connectionKey: key)
+        let count = await rig.service.subscriberCount()
+        XCTAssertEqual(count, 1)
+        await rig.events.record(event(1))
+        let data = await fresh.next()
+        XCTAssertEqual(try XPCCoding.decode(XCTUnwrap(data)), event(1))
+    }
+
+    func testStuckClientDoesNotBlockOthers() async throws {
+        let (rig, dir) = try make()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let stuck = HangingClient()
+        defer { stuck.release() }
+        let healthy = FakeClient()
+        await rig.service.subscribe(client: stuck, connectionKey: ObjectIdentifier(stuck))
+        await rig.service.subscribe(client: healthy, connectionKey: ObjectIdentifier(healthy))
+        for number in 1 ... 3 {
+            await rig.events.record(event(number))
+        }
+        for number in 1 ... 3 {
+            let data = await healthy.next()
+            XCTAssertEqual(try XPCCoding.decode(XCTUnwrap(data)), event(number))
+        }
     }
 
     func testPeerRequirementPinsBundleIdentifier() {

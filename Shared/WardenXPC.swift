@@ -21,6 +21,8 @@ import Foundation
 /// Errors that cross the XPC boundary from the extension to the app.
 enum WardenXPCError {
     static let domain = "io.github.eugenehil.warden"
+    /// `NSError.code` of a policy rejected by validation; `validationErrorsKey` carries the details.
+    static let invalidPolicyCode = 1
     /// `userInfo` key holding the `[String]` validation lines of a rejected policy.
     static let validationErrorsKey = "WardenValidationErrors"
 }
