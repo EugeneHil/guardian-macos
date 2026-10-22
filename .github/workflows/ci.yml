@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  macos-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: jdx/mise-action@v2
+      - name: Install build tools
+        run: brew install cmake ninja swiftlint swiftformat
+      - name: Build and ad-hoc sign
+        run: scripts/build.sh
+
+  macos-quality:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: jdx/mise-action@v2
+      - name: Install build tools
+        run: brew install cmake ninja swiftlint swiftformat
+      - name: Lint
+        run: scripts/lint.sh
+      - name: Test
+        run: scripts/test.sh --coverage
+      # The coverage gate (>= 80 % lines) is added in Task 3.

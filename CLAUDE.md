@@ -13,6 +13,10 @@ Warden — lightweight Endpoint DLP for macOS. Design: `warden-macos/docs/superp
 - **Warnings are errors** in every language.
 - **Docs:** English.
 
+## Build & test
+
+Tuist is pinned in `mise.toml`. `scripts/build.sh` (generate, unsigned build, ad-hoc sign per ADR-0001), `scripts/test.sh [--coverage]` (both unit-test schemes), `scripts/lint.sh` (SwiftLint `--strict` + SwiftFormat `--lint`). Run lint and tests before every commit.
+
 ## Guard hook
 
 `tooling/claude/guard.py` runs before every Read/Edit/Write/Bash call and enforces the secret and branch rules above. Do not disable it. Tests: `python3 -I -B -m unittest discover -s tooling/claude`.
