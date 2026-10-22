@@ -13,9 +13,16 @@ import Foundation
 }
 
 /// Served by the app for live event delivery from the extension.
-@objc protocol WardenClientXPC {
+@objc protocol WardenClientXPC: Sendable {
     /// One JSON `AccessEvent`.
     func eventRecorded(_ eventData: Data) async
+}
+
+/// Errors that cross the XPC boundary from the extension to the app.
+enum WardenXPCError {
+    static let domain = "io.github.eugenehil.warden"
+    /// `userInfo` key holding the `[String]` validation lines of a rejected policy.
+    static let validationErrorsKey = "WardenValidationErrors"
 }
 
 extension JSONEncoder {
