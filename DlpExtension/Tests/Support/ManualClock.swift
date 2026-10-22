@@ -24,10 +24,16 @@ final class ManualClock: Clock, Sendable {
         let continuation: CheckedContinuation<Void, any Error>
     }
 
+    private struct Waiter {
+        let count: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     private struct State {
         var now = Instant(offset: .zero)
         var nextID = 0
         var sleepers: [Int: Sleeper] = [:]
+        var waiters: [Waiter] = []
     }
 
     private let state = Mutex(State())
@@ -38,6 +44,28 @@ final class ManualClock: Clock, Sendable {
 
     var minimumResolution: Duration {
         .zero
+    }
+
+    /// Number of sleepers currently suspended.
+    var sleeperCount: Int {
+        state.withLock { $0.sleepers.count }
+    }
+
+    /// Suspends until at least `count` sleepers are suspended, so a following `advance(by:)` cannot race a
+    /// `sleep(for:)` that has not computed its deadline yet.
+    func waitForSleepers(_ count: Int) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let ready = state.withLock { state -> Bool in
+                if state.sleepers.count >= count {
+                    return true
+                }
+                state.waiters.append(Waiter(count: count, continuation: continuation))
+                return false
+            }
+            if ready {
+                continuation.resume()
+            }
+        }
     }
 
     func advance(by duration: Duration) {
@@ -58,12 +86,18 @@ final class ManualClock: Clock, Sendable {
         }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-                let ready = state.withLock { state -> Bool in
+                let (ready, satisfied) = state.withLock { state -> (Bool, [Waiter]) in
                     if deadline <= state.now || Task.isCancelled {
-                        return true
+                        return (true, [])
                     }
                     state.sleepers[id] = Sleeper(deadline: deadline, continuation: continuation)
-                    return false
+                    let count = state.sleepers.count
+                    let satisfied = state.waiters.filter { $0.count <= count }
+                    state.waiters.removeAll { $0.count <= count }
+                    return (false, satisfied)
+                }
+                for waiter in satisfied {
+                    waiter.continuation.resume()
                 }
                 if ready {
                     if Task.isCancelled {

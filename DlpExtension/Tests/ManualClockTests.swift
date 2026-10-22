@@ -22,6 +22,30 @@ final class ManualClockTests: XCTestCase {
         try await clock.sleep(until: clock.now)
     }
 
+    func testWaitForSleepersResumesOnceTheSleeperIsSuspended() async throws {
+        let clock = ManualClock()
+        XCTAssertEqual(clock.sleeperCount, 0)
+        let sleeper = Task { try await clock.sleep(for: .seconds(10)) }
+        await clock.waitForSleepers(1)
+        XCTAssertEqual(clock.sleeperCount, 1)
+        clock.advance(by: .seconds(9))
+        XCTAssertEqual(clock.sleeperCount, 1)
+        clock.advance(by: .seconds(1))
+        XCTAssertEqual(clock.sleeperCount, 0)
+        try await sleeper.value
+    }
+
+    func testWaitForSleepersReturnsWhenAlreadySatisfied() async {
+        let clock = ManualClock()
+        await clock.waitForSleepers(0)
+        let sleeper = Task { try await clock.sleep(for: .seconds(1)) }
+        await clock.waitForSleepers(1)
+        await clock.waitForSleepers(1)
+        sleeper.cancel()
+        _ = await sleeper.result
+        XCTAssertEqual(clock.sleeperCount, 0)
+    }
+
     func testCancelledSleepThrows() async {
         let clock = ManualClock()
         let deadline = clock.now.advanced(by: .seconds(10))
