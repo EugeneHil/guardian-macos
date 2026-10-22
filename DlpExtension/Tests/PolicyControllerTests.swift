@@ -39,12 +39,12 @@ final class PolicyControllerTests: XCTestCase {
         let log: LogBox
     }
 
-    private func make() -> Rig {
+    private func make(store: (any PolicyPersisting)? = nil) -> Rig {
         let holder = PolicyHolder()
         let cache = FakeCache()
         let log = LogBox()
         let controller = PolicyController(
-            holder: holder, store: PolicyStore(fileURL: fileURL), cache: cache, log: { log.add($0) }
+            holder: holder, store: store ?? PolicyStore(fileURL: fileURL), cache: cache, log: { log.add($0) }
         )
         return Rig(controller: controller, holder: holder, cache: cache, log: log)
     }
@@ -109,5 +109,117 @@ final class PolicyControllerTests: XCTestCase {
         XCTAssertEqual(rig.holder.version, 5)
         XCTAssertEqual(rig.cache.count.withLock { $0 }, 1)
         XCTAssertFalse(rig.log.lines.withLock { $0 }.isEmpty)
+    }
+
+    func testApplyDuringStartPushedVersionWins() async throws {
+        let store = GatedStore(initial: PolicyFixtures.policy(version: 1))
+        await store.closeLoad()
+        let rig = make(store: store)
+        let starting = Task { await rig.controller.start() }
+        await store.waitForLoadEntered()
+        let version = try await rig.controller.apply(PolicyFixtures.policy(version: 2))
+        XCTAssertEqual(version, 2)
+        await store.openLoad()
+        await starting.value
+        XCTAssertEqual(rig.holder.version, 2)
+        let current = await rig.controller.currentVersion()
+        XCTAssertEqual(current, 2)
+        XCTAssertEqual(rig.cache.count.withLock { $0 }, 1)
+    }
+
+    func testConcurrentAppliesEndConsistent() async throws {
+        let store = GatedStore(initial: nil)
+        await store.closeFirstSave()
+        let rig = make(store: store)
+        let first = Task { try await rig.controller.apply(PolicyFixtures.policy(version: 1)) }
+        await store.waitForFirstSaveEntered()
+        let second = Task { try await rig.controller.apply(PolicyFixtures.policy(version: 2)) }
+        // Let the second apply reach its own persistence step before releasing the first save.
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        await store.openFirstSave()
+        _ = try await first.value
+        _ = try await second.value
+        XCTAssertEqual(rig.holder.version, 2)
+        let onDisk = await store.data
+        XCTAssertEqual(onDisk, PolicyFixtures.policy(version: 2))
+    }
+}
+
+/// Persistence fake whose `load` and first `save` can be held until the test releases them.
+private actor GatedStore: PolicyPersisting {
+    private(set) var data: Data?
+    private var loadClosed = false
+    private var loadEntered = false
+    private var saveClosed = false
+    private var saveCalls = 0
+    private var firstSaveEntered = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(initial: Data?) {
+        data = initial
+    }
+
+    func closeLoad() {
+        loadClosed = true
+    }
+
+    func closeFirstSave() {
+        saveClosed = true
+    }
+
+    func openLoad() {
+        loadClosed = false; wake()
+    }
+
+    func openFirstSave() {
+        saveClosed = false; wake()
+    }
+
+    func waitForLoadEntered() async {
+        while !loadEntered {
+            await park()
+        }
+    }
+
+    func waitForFirstSaveEntered() async {
+        while !firstSaveEntered {
+            await park()
+        }
+    }
+
+    func load() async throws -> Data? {
+        let snapshot = data
+        loadEntered = true
+        wake()
+        while loadClosed {
+            await park()
+        }
+        return snapshot
+    }
+
+    func save(_ newData: Data) async throws {
+        saveCalls += 1
+        if saveCalls == 1 {
+            firstSaveEntered = true
+            wake()
+            while saveClosed {
+                await park()
+            }
+        }
+        data = newData
+    }
+
+    private func park() async {
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    private func wake() {
+        let pending = waiters
+        waiters = []
+        for waiter in pending {
+            waiter.resume()
+        }
     }
 }

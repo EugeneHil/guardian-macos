@@ -4,8 +4,14 @@ enum PolicyStoreError: Error, Equatable {
     case unreadable(String)
 }
 
+/// Persistence seam for `PolicyController`; `PolicyStore` is the production implementation.
+protocol PolicyPersisting: Sendable {
+    func load() async throws -> Data?
+    func save(_ data: Data) async throws
+}
+
 /// On-disk policy cache: mode 0600, written atomically (temp file in the same directory + rename).
-actor PolicyStore {
+actor PolicyStore: PolicyPersisting {
     private let fileURL: URL
 
     init(fileURL: URL) {

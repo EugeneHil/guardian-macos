@@ -8,8 +8,8 @@ final class PolicyHolderTests: XCTestCase {
         return copy.withUTF8 { holder.fastPathAllows(UnsafeRawBufferPointer($0)) }
     }
 
-    private func engine() throws -> WDEngine {
-        try WDEngine(policy: WDPolicy(json: PolicyFixtures.policy(version: 7)))
+    private func policy() throws -> WDPolicy {
+        try WDPolicy(json: PolicyFixtures.policy(version: 7))
     }
 
     func testAllowsUntilPolicyLoaded() {
@@ -21,21 +21,21 @@ final class PolicyHolderTests: XCTestCase {
 
     func testProtectedPathIsNotFastPath() throws {
         let holder = PolicyHolder()
-        try holder.set(engine(), version: 7)
+        try holder.set(policy: policy())
         XCTAssertEqual(holder.version, 7)
         XCTAssertFalse(allows(holder, "/Users/a/.secrets"))
     }
 
     func testUnrelatedPathIsFastPath() throws {
         let holder = PolicyHolder()
-        try holder.set(engine())
+        try holder.set(policy: policy())
         XCTAssertTrue(allows(holder, "/Users/a/notes.txt"))
     }
 
-    func testSetNilClearsEngine() throws {
+    func testClearRemovesEngineAndVersion() throws {
         let holder = PolicyHolder()
-        try holder.set(engine(), version: 7)
-        holder.set(nil)
+        try holder.set(policy: policy())
+        holder.clear()
         XCTAssertNil(holder.engine())
         XCTAssertEqual(holder.version, 0)
         XCTAssertTrue(allows(holder, "/Users/a/.secrets"))

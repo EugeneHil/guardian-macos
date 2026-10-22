@@ -11,11 +11,20 @@ final class PolicyHolder: Sendable {
 
     private let state = Mutex(State())
 
-    /// Replaces the active engine; `nil` returns the holder to the allow-everything state.
-    func set(_ engine: WDEngine?, version: Int64 = 0) {
+    /// Activates the policy; the reported version always comes from the policy itself.
+    func set(policy: WDPolicy) {
+        let engine = WDEngine(policy: policy)
         state.withLock {
             $0.engine = engine
-            $0.version = engine == nil ? 0 : version
+            $0.version = policy.version
+        }
+    }
+
+    /// Returns the holder to the allow-everything state.
+    func clear() {
+        state.withLock {
+            $0.engine = nil
+            $0.version = 0
         }
     }
 
