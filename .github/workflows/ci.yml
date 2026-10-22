@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  macos-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select newest Xcode
+        run: |
+          xcode="$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)"
+          [ -n "$xcode" ] || { echo "no non-beta Xcode found" >&2; exit 1; }
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+      - uses: jdx/mise-action@v5
+      - name: Install build tools
+        run: brew install cmake ninja swiftlint swiftformat
+      - name: Build and ad-hoc sign
+        run: scripts/build.sh
+
+  macos-quality:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select newest Xcode
+        run: |
+          xcode="$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)"
+          [ -n "$xcode" ] || { echo "no non-beta Xcode found" >&2; exit 1; }
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+      - uses: jdx/mise-action@v5
+      - name: Install build tools
+        run: brew install cmake ninja swiftlint swiftformat
+      - name: Lint
+        run: scripts/lint.sh
+      - name: Script tests
+        run: python3 -I -B -m unittest discover -s scripts
+      - name: Test with coverage gate (>= 80 % lines)
+        run: scripts/coverage.sh
