@@ -53,7 +53,7 @@ final class ResponseGate: Sendable {
 
 /// Answers `AUTH_OPEN` events: inline for the fast path, otherwise by an evaluation task raced against a
 /// watchdog that allows at half of the remaining deadline. Fail-open: no policy, unresolvable responsible
-/// process or a missed watchdog all yield allow.
+/// process, a missed watchdog or too many evaluations in flight all yield allow.
 final class OpenCoordinator: Sendable {
     private let holder: PolicyHolder
     private let resolver: any ProcessResolving
@@ -61,16 +61,29 @@ final class OpenCoordinator: Sendable {
     /// Fixes a deadline `offset` from now on the injected clock and returns a sleep until it.
     private let sleeper: @Sendable (Duration) -> @Sendable () async throws -> Void
     private let log: @Sendable (String) -> Void
+    private let now: @Sendable () -> Date
+    /// Evaluations may block on the resolver; beyond this many in flight candidates are allowed unevaluated so a
+    /// burst cannot exhaust the cooperative pool and starve the watchdogs.
+    private let maxInFlight: Int
+    private let inFlight = Mutex(0)
 
     init(
         holder: PolicyHolder, resolver: any ProcessResolving, events: any EventRecording,
-        clock: any Clock<Duration> = ContinuousClock(), log: @escaping @Sendable (String) -> Void
+        clock: any Clock<Duration> = ContinuousClock(), maxInFlight: Int = 64,
+        now: @escaping @Sendable () -> Date = Date.init, log: @escaping @Sendable (String) -> Void
     ) {
         self.holder = holder
         self.resolver = resolver
         self.events = events
         sleeper = Self.deadlineSleeper(on: clock)
+        self.maxInFlight = maxInFlight
+        self.now = now
         self.log = log
+    }
+
+    /// Number of candidate evaluations started and not yet finished.
+    var inFlightCount: Int {
+        inFlight.withLock { $0 }
     }
 
     /// Lossy UTF-8 decoding: invalid bytes become U+FFFD instead of failing.
@@ -85,8 +98,20 @@ final class OpenCoordinator: Sendable {
         holder.fastPathAllows(path)
     }
 
-    /// Never blocks: starts the evaluation and the watchdog and returns. `respond` is called exactly once.
+    /// Never blocks: starts the evaluation and the watchdog and returns. `respond` is called exactly once — before
+    /// returning when the evaluation cap is reached.
     func handleCandidate(_ request: OpenRequest, respond: @escaping @Sendable (OpenResponse) -> Void) {
+        let arrivedAt = now()
+        let admitted = inFlight.withLock { count -> Bool in
+            guard count < maxInFlight else { return false }
+            count += 1
+            return true
+        }
+        guard admitted else {
+            respond(.allow)
+            log("evaluation cap of \(maxInFlight) in flight reached; allowed an open without evaluating it")
+            return
+        }
         let gate = ResponseGate(respond)
         // The deadline is fixed now, on the ES thread: scheduling delay of the task must not eat the margin.
         let sleepUntilDeadline = sleeper(request.remaining / 2)
@@ -101,12 +126,20 @@ final class OpenCoordinator: Sendable {
             }
         }
         Task {
-            await evaluate(request, gate: gate, watchdog: watchdog)
+            await evaluate(request, arrivedAt: arrivedAt, gate: gate, watchdog: watchdog)
         }
     }
 
-    private func evaluate(_ request: OpenRequest, gate: ResponseGate, watchdog: Task<Void, Never>) async {
+    /// Frees the evaluation slot; called once per admitted candidate, before its verdict is sent.
+    private func finishEvaluation() {
+        inFlight.withLock { $0 -= 1 }
+    }
+
+    private func evaluate(
+        _ request: OpenRequest, arrivedAt: Date, gate: ResponseGate, watchdog: Task<Void, Never>
+    ) async {
         guard let engine = holder.engine() else {
+            finishEvaluation()
             watchdog.cancel()
             gate.send(.allow)
             return
@@ -121,6 +154,7 @@ final class OpenCoordinator: Sendable {
             )
         )
         let verdict: OpenResponse = decision.deny ? .deny : .allow
+        finishEvaluation()
         watchdog.cancel()
         let delivered = gate.send(verdict)
         if !delivered {
@@ -129,8 +163,9 @@ final class OpenCoordinator: Sendable {
         // The event records what Endpoint Security was told; a late deny keeps its rule id for the log.
         await events.record(
             AccessEvent(
-                id: UUID(), timestamp: Date(), process: request.process, responsible: responsible, file: request.file,
-                decision: delivered && decision.deny ? .deny : .allow, ruleId: decision.deny ? decision.ruleId : nil
+                id: UUID(), timestamp: arrivedAt, process: request.process, responsible: responsible,
+                file: request.file, decision: delivered && decision.deny ? .deny : .allow,
+                ruleId: decision.deny ? decision.ruleId : nil
             )
         )
     }
