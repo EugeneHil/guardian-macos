@@ -101,6 +101,7 @@ final class PolicySyncServiceTests: XCTestCase {
         let rig = Rig()
         rig.api.script(Self.policy(1), Self.policy(2), Self.policy(2), Self.policy(3))
         rig.link.scriptApply(.success(nil), .failure(.invalidPolicy(["bad"])), .success(nil))
+        rig.link.setCurrentVersion(.success(1))
         await rig.service.syncNow()
         await rig.service.syncNow()
         var state = await rig.service.state
@@ -114,6 +115,42 @@ final class PolicySyncServiceTests: XCTestCase {
         XCTAssertEqual(rig.link.applied, [Self.body(1), Self.body(2), Self.body(3)])
         state = await rig.service.state
         XCTAssertEqual(state, .synced(version: 3, at: Self.fixedNow))
+    }
+
+    func testRestartWhileRejectedPolicyIsCurrentRepushesLastGood() async {
+        let rig = Rig()
+        rig.api.script(Self.policy(1), Self.policy(2), Self.policy(2))
+        rig.link.scriptApply(.success(nil), .failure(.invalidPolicy(["bad"])), .success(nil))
+        rig.link.setCurrentVersion(.success(1))
+        await rig.service.syncNow()
+        await rig.service.syncNow()
+        rig.link.setCurrentVersion(.success(0))
+        await rig.service.syncNow()
+        XCTAssertEqual(rig.link.applied, [Self.body(1), Self.body(2), Self.body(1)])
+        var state = await rig.service.state
+        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+        rig.link.setCurrentVersion(.success(1))
+        await rig.service.syncNow()
+        XCTAssertEqual(rig.link.applied.count, 3, "the rejected body is never resent")
+        state = await rig.service.state
+        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+    }
+
+    func testRejectedRepushOfGoodBodyDoesNotPoisonEtag() async {
+        let rig = Rig()
+        rig.api.script(Self.policy(1), .success(.notModified))
+        rig.link.scriptApply(.success(nil), .failure(.invalidPolicy(["bad"])), .success(nil))
+        await rig.service.syncNow()
+        rig.link.setCurrentVersion(.success(0))
+        await rig.service.syncNow()
+        var state = await rig.service.state
+        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+        rig.api.script(Self.policy(1))
+        await rig.service.syncNow()
+        XCTAssertEqual(rig.api.fetchEtags, [nil, "\"v1\"", nil], "the next tick refetches in full")
+        XCTAssertEqual(rig.link.applied.count, 3)
+        state = await rig.service.state
+        XCTAssertEqual(state, .synced(version: 1, at: Self.fixedNow))
     }
 
     func testServerDownKeepsLastGoodPolicy() async {

@@ -107,30 +107,44 @@ actor PolicySyncService {
 
     private func handleModified(body: Data, etag newETag: String, version: Int64) async {
         if newETag == rejectedETag {
-            set(.extensionUnavailable(version: appliedVersion ?? 0))
+            // The extension already refused this policy: keep the last good one alive, but do not resend the body.
+            if await extensionHoldsLastGood() {
+                set(.extensionUnavailable(version: appliedVersion ?? 0))
+            }
             return
         }
         await push(body: body, etag: newETag, serverVersion: version)
     }
 
     private func handleNotModified() async {
-        guard let version = appliedVersion, let body = lastBody else {
+        guard let version = appliedVersion else {
             return
+        }
+        if await extensionHoldsLastGood() {
+            set(.synced(version: version, at: now()))
+        }
+    }
+
+    /// Checks that the extension still enforces the last good policy and re-pushes it if not (e.g. after a restart).
+    /// Any failure, including a rejection of the already-accepted body, is treated as "extension unavailable": the
+    /// ETag is cleared so the next tick retries, and the rejected ETag is left alone.
+    private func extensionHoldsLastGood() async -> Bool {
+        guard let version = appliedVersion, let body = lastBody else {
+            return false
         }
         do {
             let current = try await link.currentPolicyVersion()
             if current != version {
                 log.info("extension policy version differs from the last applied one, re-pushing")
-                await push(body: body, etag: etag, serverVersion: version)
-                return
+                appliedVersion = try await link.apply(policy: body)
             }
-            set(.synced(version: version, at: now()))
+            return true
+        } catch is CancellationError {
+            return false
         } catch {
-            if error is CancellationError {
-                return
-            }
             etag = nil
             set(.extensionUnavailable(version: version))
+            return false
         }
     }
 
