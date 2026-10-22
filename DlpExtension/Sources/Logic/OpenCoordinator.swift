@@ -58,7 +58,8 @@ final class OpenCoordinator: Sendable {
     private let holder: PolicyHolder
     private let resolver: any ProcessResolving
     private let events: any EventRecording
-    private let clock: any Clock<Duration>
+    /// Fixes a deadline `offset` from now on the injected clock and returns a sleep until it.
+    private let sleeper: @Sendable (Duration) -> @Sendable () async throws -> Void
     private let log: @Sendable (String) -> Void
 
     init(
@@ -68,7 +69,7 @@ final class OpenCoordinator: Sendable {
         self.holder = holder
         self.resolver = resolver
         self.events = events
-        self.clock = clock
+        sleeper = Self.deadlineSleeper(on: clock)
         self.log = log
     }
 
@@ -87,9 +88,11 @@ final class OpenCoordinator: Sendable {
     /// Never blocks: starts the evaluation and the watchdog and returns. `respond` is called exactly once.
     func handleCandidate(_ request: OpenRequest, respond: @escaping @Sendable (OpenResponse) -> Void) {
         let gate = ResponseGate(respond)
-        let watchdog = Task { [clock, log] in
+        // The deadline is fixed now, on the ES thread: scheduling delay of the task must not eat the margin.
+        let sleepUntilDeadline = sleeper(request.remaining / 2)
+        let watchdog = Task(priority: .high) { [log] in
             do {
-                try await clock.sleep(for: request.remaining / 2)
+                try await sleepUntilDeadline()
             } catch {
                 return // cancelled: the verdict was sent first
             }
@@ -119,15 +122,27 @@ final class OpenCoordinator: Sendable {
         )
         let verdict: OpenResponse = decision.deny ? .deny : .allow
         watchdog.cancel()
-        if !gate.send(verdict) {
+        let delivered = gate.send(verdict)
+        if !delivered {
             log("late verdict \(verdict) discarded: the watchdog already allowed")
         }
+        // The event records what Endpoint Security was told; a late deny keeps its rule id for the log.
         await events.record(
             AccessEvent(
                 id: UUID(), timestamp: Date(), process: request.process, responsible: responsible, file: request.file,
-                decision: decision.deny ? .deny : .allow, ruleId: decision.deny ? decision.ruleId : nil
+                decision: delivered && decision.deny ? .deny : .allow, ruleId: decision.deny ? decision.ruleId : nil
             )
         )
+    }
+
+    /// Opens the clock existential once; each call of the result reads `now` synchronously.
+    private static func deadlineSleeper<C: Clock>(
+        on clock: C
+    ) -> @Sendable (Duration) -> @Sendable () async throws -> Void where C.Duration == Duration {
+        { offset in
+            let deadline = clock.now.advanced(by: offset)
+            return { try await clock.sleep(until: deadline, tolerance: nil) }
+        }
     }
 
     private static func info(_ identity: ProcessIdentity) -> WDProcessInfo {

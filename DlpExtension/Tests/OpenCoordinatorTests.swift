@@ -267,7 +267,6 @@ final class OpenCoordinatorTests: XCTestCase {
         var events = rig.queue.updates.makeAsyncIterator()
         var log = rig.log.lines.makeAsyncIterator()
         rig.handle(process: Fixture.node, responsible: Fixture.claudeToken, remaining: .milliseconds(100))
-        await rig.clock.waitForSleepers(1)
         rig.clock.advance(by: .milliseconds(50))
         let response = await responses.next()
         XCTAssertEqual(response, .allow)
@@ -275,10 +274,61 @@ final class OpenCoordinatorTests: XCTestCase {
         XCTAssertTrue(watchdogLine?.contains("watchdog") ?? false, String(describing: watchdogLine))
         rig.resolver.release()
         let event = await events.next()
-        XCTAssertEqual(event?.decision, .deny, "the real verdict is still recorded")
-        XCTAssertEqual(event?.ruleId, "no-secrets")
+        XCTAssertEqual(event?.decision, .allow, "the event records what Endpoint Security was actually told")
+        XCTAssertEqual(event?.ruleId, "no-secrets", "the rule that would have applied is kept")
         let lateLine = await log.next() // logged before the event is recorded
         XCTAssertTrue(lateLine?.contains("late") ?? false, String(describing: lateLine))
+        XCTAssertEqual(rig.responses.all, [.allow])
+    }
+
+    func testVerdictWinningTheRaceRecordsDeny() async throws {
+        let rig = try make(resolver: FakeResolver([Fixture.claudeToken: Fixture.claude], gated: true))
+        var responses = rig.responses.stream.makeAsyncIterator()
+        var events = rig.queue.updates.makeAsyncIterator()
+        rig.handle(process: Fixture.node, responsible: Fixture.claudeToken, remaining: .milliseconds(100))
+        rig.clock.advance(by: .milliseconds(49))
+        rig.resolver.release()
+        let response = await responses.next()
+        XCTAssertEqual(response, .deny)
+        let event = await events.next()
+        XCTAssertEqual(event?.decision, .deny)
+        XCTAssertEqual(event?.ruleId, "no-secrets")
+        XCTAssertEqual(rig.responses.all, [.deny])
+    }
+
+    func testWatchdogDeadlineIsFixedWhenTheEventArrives() async throws {
+        let rig = try make(resolver: FakeResolver([Fixture.claudeToken: Fixture.cat], gated: true))
+        var responses = rig.responses.stream.makeAsyncIterator()
+        var events = rig.queue.updates.makeAsyncIterator()
+        rig.handle(process: Fixture.node, responsible: Fixture.claudeToken, remaining: .milliseconds(100))
+        // No suspension point since `handle`: time passes before the watchdog task may even have started, as
+        // under scheduling delay. The allow must still come at 50 % of the budget measured from arrival.
+        rig.clock.advance(by: .milliseconds(50))
+        let response = await responses.next()
+        XCTAssertEqual(response, .allow)
+        rig.resolver.release()
+        _ = await events.next()
+        XCTAssertEqual(rig.responses.all, [.allow])
+    }
+
+    func testZeroRemainingAllowsImmediatelyOnce() async throws {
+        try await assertImmediateSingleAllow(remaining: .zero)
+    }
+
+    func testNegativeRemainingAllowsImmediatelyOnce() async throws {
+        try await assertImmediateSingleAllow(remaining: .milliseconds(-10))
+    }
+
+    private func assertImmediateSingleAllow(remaining: Duration) async throws {
+        let rig = try make(resolver: FakeResolver([Fixture.claudeToken: Fixture.claude], gated: true))
+        var responses = rig.responses.stream.makeAsyncIterator()
+        var events = rig.queue.updates.makeAsyncIterator()
+        rig.handle(process: Fixture.node, responsible: Fixture.claudeToken, remaining: remaining)
+        let response = await responses.next() // the clock never moves
+        XCTAssertEqual(response, .allow)
+        rig.resolver.release()
+        let event = await events.next()
+        XCTAssertEqual(event?.decision, .allow)
         XCTAssertEqual(rig.responses.all, [.allow])
     }
 
