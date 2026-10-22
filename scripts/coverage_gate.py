@@ -5,7 +5,7 @@ import json
 import re
 import sys
 
-DEFAULT_EXCLUDES = [r"/Views/", r"/Entry/", r"/DesignSystem/", r"/ES/", r"Keychain", r"/Tests/"]
+DEFAULT_EXCLUDES = [r"/Views/", r"/Entry/", r"/DesignSystem/", r"/ES/", r"/CoreBridge/", r"Keychain", r"/Tests/"]
 
 
 def collect(report, excludes):

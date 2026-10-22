@@ -12,7 +12,7 @@ The policy engine lives in the C++17 library `warden-core` (separate repository)
 - `warden-core` is a git submodule at `external/warden-core`, pinned to the release tag `v0.1.0`.
 - `scripts/build-corecpp.sh` configures it with its own `macos` CMake preset (Release, arm64, tests off) into `build/corecpp` and builds `warden_core`. It runs as a pre-build script of the small `WardenCoreLib` target, which `CoreBridge` depends on. The script lives in a separate target because an unsandboxed script phase next to `CoreBridge`'s "Copy Headers" phase makes Xcode emit a warning, and warnings are errors for us.
 - `CoreBridge` is a `.staticFramework`: its objects link straight into the extension and the test bundles, so nothing extra is embedded or signed. This keeps the inside-out ad-hoc signing of ADR-0001 unchanged.
-- Consumers (`DlpExtension`, test bundles) add `libwarden_core.a -lc++` to `OTHER_LDFLAGS`, because a static framework does not carry the archive.
+- Consumers (`DlpExtension` and every test bundle that uses CoreBridge: `DlpExtensionTests`, `WardenAppTests`, `CoreBridgeTests`) add `libwarden_core.a -lc++` to `OTHER_LDFLAGS`, because a static framework does not carry the archive.
 - The build is arm64-only, matching the VM and the single supported host architecture.
 
 ## Why not an xcframework

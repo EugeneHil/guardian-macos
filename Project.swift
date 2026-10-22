@@ -59,7 +59,7 @@ let project = Project(
             bundleId: "\(extID).tests",
             sources: ["Shared/**", "DlpExtension/Sources/Logic/**", "DlpExtension/Tests/**"],
             dependencies: [.target(name: "CoreBridge")],
-            settings: .settings(base: adhoc)
+            settings: .settings(base: adhoc.merging(["OTHER_LDFLAGS": .string(coreLib)]) { $1 })
         ),
         .target(
             name: "WardenAppTests",
@@ -68,7 +68,7 @@ let project = Project(
             bundleId: "\(appID).tests",
             sources: ["Shared/**", "WardenApp/Sources/Logic/**", "WardenApp/Tests/**"],
             dependencies: [.target(name: "CoreBridge")],
-            settings: .settings(base: adhoc)
+            settings: .settings(base: adhoc.merging(["OTHER_LDFLAGS": .string(coreLib)]) { $1 })
         ),
         // Hosts the CMake pre-build script alone: its unsandboxed script phase must not share a
         // target with CoreBridge's "Copy Headers" phase (Xcode warns about that combination).
