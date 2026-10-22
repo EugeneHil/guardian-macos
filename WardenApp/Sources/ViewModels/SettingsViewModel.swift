@@ -71,6 +71,11 @@ final class SettingsViewModel {
         }
     }
 
+    /// Shown when the extension is active but unreachable (see `SetupHints`).
+    var fullDiskAccessHint: String? {
+        SetupHints.fullDiskAccess(sync: store.syncState, extensionState: store.extensionState)
+    }
+
     func save() async {
         guard !isSaving, canSave, let url = URL(string: trimmedURL) else { return }
         isSaving = true

@@ -137,4 +137,16 @@ final class PopoverViewModelTests: XCTestCase {
         await model.syncNowTapped()
         XCTAssertEqual(latch.count, 1)
     }
+
+    func testFullDiskAccessHintWhenActiveExtensionIsUnreachable() async {
+        let model = await makeModel(sync: .extensionUnavailable(version: 0), ext: .active)
+        XCTAssertEqual(model.fullDiskAccessHint, "Open System Settings → Privacy & Security → Full Disk Access")
+    }
+
+    func testNoFullDiskAccessHintWhenSyncedOrNotInstalled() async {
+        let synced = await makeModel(sync: .synced(version: 2, at: now), ext: .active)
+        XCTAssertNil(synced.fullDiskAccessHint)
+        let notInstalled = await makeModel(sync: .extensionUnavailable(version: 2), ext: .notInstalled)
+        XCTAssertNil(notInstalled.fullDiskAccessHint)
+    }
 }

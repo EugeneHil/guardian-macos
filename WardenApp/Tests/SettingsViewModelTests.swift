@@ -179,4 +179,30 @@ final class SettingsViewModelTests: XCTestCase {
         )
         XCTAssertEqual(model.extensionStateText, "boom")
     }
+
+    private func makeModel(sync: SyncState, ext: ExtensionState) async -> SettingsViewModel {
+        let harness = StoreHarness()
+        let store = harness.makeStore()
+        harness.sync.continuation.yield(sync)
+        harness.ext.continuation.yield(ext)
+        await harness.settle(store)
+        return SettingsViewModel(
+            store: store, settings: RecordingSettingsStore(), secrets: InMemorySecretStore(),
+            extensionManager: FakeExtensionManager(), resumeSync: {}, resumeUploader: {}
+        )
+    }
+
+    func testFullDiskAccessHintWhenActiveExtensionIsUnreachable() async {
+        let model = await makeModel(sync: .extensionUnavailable(version: 3), ext: .active)
+        XCTAssertEqual(model.fullDiskAccessHint, "Open System Settings → Privacy & Security → Full Disk Access")
+    }
+
+    func testNoFullDiskAccessHintOtherwise() async {
+        let synced = await makeModel(sync: .synced(version: 3, at: EventFixture.now), ext: .active)
+        XCTAssertNil(synced.fullDiskAccessHint)
+        let notInstalled = await makeModel(sync: .extensionUnavailable(version: 3), ext: .notInstalled)
+        XCTAssertNil(notInstalled.fullDiskAccessHint)
+        let awaiting = await makeModel(sync: .extensionUnavailable(version: 3), ext: .awaitingApproval)
+        XCTAssertNil(awaiting.fullDiskAccessHint)
+    }
 }

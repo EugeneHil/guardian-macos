@@ -57,6 +57,11 @@ final class PopoverViewModel {
         }
     }
 
+    /// Shown when the extension is active but unreachable (see `SetupHints`).
+    var fullDiskAccessHint: String? {
+        SetupHints.fullDiskAccess(sync: store.syncState, extensionState: store.extensionState)
+    }
+
     var recentRows: [EventRowModel] {
         store.events.prefix(Self.recentCount).map { EventRowModel(event: $0, now: now(), home: home) }
     }
