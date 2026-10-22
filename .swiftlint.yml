@@ -2,6 +2,7 @@ included:
   - Shared
   - WardenApp
   - DlpExtension
+  - CoreBridge
   - Project.swift
   - Tuist.swift
 excluded:

@@ -18,6 +18,9 @@ let adhoc: SettingsDictionary = [
     "MACOSX_DEPLOYMENT_TARGET": "15.0",
 ]
 
+/// Consumers of the CoreBridge static framework link the CMake-built warden-core archive themselves.
+let coreLib = "$(SRCROOT)/build/corecpp/libwarden_core.a -lc++"
+
 let project = Project(
     name: "Warden",
     targets: [
@@ -43,8 +46,9 @@ let project = Project(
             infoPlist: .file(path: "DlpExtension/Info.plist"),
             sources: ["DlpExtension/Sources/**", "Shared/**"],
             entitlements: .file(path: "DlpExtension/DlpExtension.entitlements"),
+            dependencies: [.target(name: "CoreBridge")],
             settings: .settings(base: adhoc.merging([
-                "OTHER_LDFLAGS": "-lEndpointSecurity",
+                "OTHER_LDFLAGS": .string("-lEndpointSecurity \(coreLib)"),
                 "PRODUCT_NAME": .string(extID),
             ]) { $1 })
         ),
@@ -54,6 +58,7 @@ let project = Project(
             product: .unitTests,
             bundleId: "\(extID).tests",
             sources: ["Shared/**", "DlpExtension/Sources/Logic/**", "DlpExtension/Tests/**"],
+            dependencies: [.target(name: "CoreBridge")],
             settings: .settings(base: adhoc)
         ),
         .target(
@@ -62,7 +67,50 @@ let project = Project(
             product: .unitTests,
             bundleId: "\(appID).tests",
             sources: ["Shared/**", "WardenApp/Sources/Logic/**", "WardenApp/Tests/**"],
+            dependencies: [.target(name: "CoreBridge")],
             settings: .settings(base: adhoc)
+        ),
+        // Hosts the CMake pre-build script alone: its unsandboxed script phase must not share a
+        // target with CoreBridge's "Copy Headers" phase (Xcode warns about that combination).
+        .target(
+            name: "WardenCoreLib",
+            destinations: .macOS,
+            product: .staticLibrary,
+            bundleId: "\(appID).corelib",
+            sources: ["CoreBridge/CoreLib/**"],
+            scripts: [
+                .pre(
+                    script: "\"$SRCROOT/scripts/build-corecpp.sh\"",
+                    name: "Build warden-core",
+                    basedOnDependencyAnalysis: false
+                ),
+            ],
+            settings: .settings(base: adhoc.merging(["ENABLE_USER_SCRIPT_SANDBOXING": "NO"]) { $1 })
+        ),
+        .target(
+            name: "CoreBridge",
+            destinations: .macOS,
+            product: .staticFramework,
+            bundleId: "\(appID).corebridge",
+            sources: ["CoreBridge/Sources/**"],
+            headers: .headers(public: ["CoreBridge/Sources/**/*.h"]),
+            dependencies: [.target(name: "WardenCoreLib")],
+            settings: .settings(base: adhoc.merging([
+                "DEFINES_MODULE": "YES",
+                "CLANG_CXX_LANGUAGE_STANDARD": "c++17",
+                "CLANG_ENABLE_OBJC_ARC": "YES",
+                "HEADER_SEARCH_PATHS": "$(SRCROOT)/external/warden-core/include",
+                "OTHER_LDFLAGS": .string(coreLib),
+            ]) { $1 })
+        ),
+        .target(
+            name: "CoreBridgeTests",
+            destinations: .macOS,
+            product: .unitTests,
+            bundleId: "\(appID).corebridge.tests",
+            sources: ["CoreBridge/Tests/**"],
+            dependencies: [.target(name: "CoreBridge")],
+            settings: .settings(base: adhoc.merging(["OTHER_LDFLAGS": .string(coreLib)]) { $1 })
         ),
     ],
     schemes: [
@@ -76,6 +124,11 @@ let project = Project(
             name: "WardenAppTests", shared: true,
             buildAction: .buildAction(targets: ["WardenAppTests"]),
             testAction: .targets(["WardenAppTests"])
+        ),
+        .scheme(
+            name: "CoreBridgeTests", shared: true,
+            buildAction: .buildAction(targets: ["CoreBridgeTests"]),
+            testAction: .targets(["CoreBridgeTests"])
         ),
     ]
 )

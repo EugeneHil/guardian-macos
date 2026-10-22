@@ -10,7 +10,7 @@ coverage=NO
 
 mkdir -p build
 run_tuist generate --no-open
-for scheme in DlpExtensionTests WardenAppTests; do
+for scheme in CoreBridgeTests DlpExtensionTests WardenAppTests; do
   rm -rf "build/$scheme.xcresult"
   xcodebuild test -workspace Warden.xcworkspace -scheme "$scheme" -destination 'platform=macOS' \
     -derivedDataPath build -enableCodeCoverage "$coverage" -resultBundlePath "build/$scheme.xcresult" \
