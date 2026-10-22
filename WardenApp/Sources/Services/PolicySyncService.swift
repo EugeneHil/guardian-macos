@@ -32,6 +32,8 @@ actor PolicySyncService {
     /// ETag of a policy the extension refused; it is not pushed again until the server sends another one.
     private var rejectedETag: String?
     private var paused = false
+    /// Whether the extension already answered the startup question "which cached policy do you enforce?".
+    private var askedExtensionVersion = false
     private var syncing = false
     private var nextDelay: Duration?
 
@@ -97,7 +99,7 @@ actor PolicySyncService {
                 await handleNotModified()
             }
         } catch let error as AgentAPIError {
-            handle(error)
+            await handle(error)
         } catch {
             if !(error is CancellationError) {
                 set(.unreachable(lastVersion: appliedVersion))
@@ -168,7 +170,7 @@ actor PolicySyncService {
         }
     }
 
-    private func handle(_ error: AgentAPIError) {
+    private func handle(_ error: AgentAPIError) async {
         switch error {
         case .unauthorized:
             paused = true
@@ -180,7 +182,22 @@ actor PolicySyncService {
         case .notConfigured:
             set(.notConfigured)
         case .invalidBatch, .payloadTooLarge, .server, .transport, .pinMismatch, .malformedResponse:
+            await adoptExtensionVersionIfUnknown()
             set(.unreachable(lastVersion: appliedVersion))
+        }
+    }
+
+    /// After a relaunch with the server down, nothing was applied in this run, yet the extension may enforce its
+    /// cached policy. Asks it once; 0 means it has none. A link failure is not an answer, so a later tick asks again.
+    private func adoptExtensionVersionIfUnknown() async {
+        guard appliedVersion == nil, !askedExtensionVersion,
+              let current = try? await link.currentPolicyVersion()
+        else {
+            return
+        }
+        askedExtensionVersion = true
+        if current > 0 {
+            appliedVersion = current
         }
     }
 }

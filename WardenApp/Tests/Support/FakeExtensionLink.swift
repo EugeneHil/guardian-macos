@@ -14,6 +14,7 @@ final class FakeExtensionLink: ExtensionLinking, Sendable {
     private let state = Mutex(State())
     let applyCalls = CallLatch()
     let drainCalls = CallLatch()
+    let currentVersionCalls = CallLatch()
 
     /// Each `apply` consumes one entry (`nil` means "echo the policy's version"); the last one repeats.
     func scriptApply(_ results: Result<Int64?, ExtensionLinkError>...) {
@@ -56,7 +57,8 @@ final class FakeExtensionLink: ExtensionLinking, Sendable {
     }
 
     func currentPolicyVersion() async throws -> Int64 {
-        try state.withLock { $0.currentVersion }.get()
+        currentVersionCalls.increment()
+        return try state.withLock { $0.currentVersion }.get()
     }
 
     func drainEvents(max: Int) async throws -> [AccessEvent] {
