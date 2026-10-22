@@ -44,3 +44,13 @@ v0.1 proceeds **without** a paid certificate. The ES extension is ad-hoc signed 
 - `DlpExtension` in Plan 4 reuses the sign script approach (finding 1) and the naming/Info.plist rules (findings 2–3).
 - The XPC client check can only pin the bundle identifier (no Team ID), as noted in design §3.
 - Replacing a running extension requires deactivation/approval cycles in the guest; the e2e checklist must include "clean snapshot → install → verify".
+
+## Verified in Plan 4
+
+To be filled after the VM run (owner). Do not fill with estimates.
+
+- ES `executable.path` form (symlink-resolved or not, `/private` prefix, firmlinks, comparison with `proc_pidpath`): to be filled after the VM run.
+- Full Disk Access requirement (is `es_new_client` refused without it, and with what error): to be filled after the VM run.
+- Measured fail-open window after `kill -9` of the extension: to be filled after the VM run.
+- Observed message->deadline values for AUTH_OPEN (and whether they exceed the 2 s cap): to be filled after the VM run.
+- `es_set_deadline_miss_mode` read-back on macOS 27: to be filled after the VM run.
