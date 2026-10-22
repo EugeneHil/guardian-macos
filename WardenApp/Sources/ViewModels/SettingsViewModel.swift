@@ -16,7 +16,9 @@ final class SettingsViewModel {
         didSet { saveFailure = nil }
     }
 
+    private(set) var hasStoredToken = false
     private var saveFailure: String?
+    @ObservationIgnored private var isSaving = false
 
     @ObservationIgnored private let store: AppStateStore
     @ObservationIgnored private let settings: any SettingsStoring
@@ -51,7 +53,12 @@ final class SettingsViewModel {
     }
 
     var canSave: Bool {
-        validation.isEmpty
+        fieldIssues.isEmpty && tokenIsAcceptable
+    }
+
+    /// Reads whether a token is already stored, so saving does not force retyping it.
+    func loadStoredToken() async {
+        hasStoredToken = await (try? secrets.token()) != nil
     }
 
     var extensionStateText: String {
@@ -65,15 +72,23 @@ final class SettingsViewModel {
     }
 
     func save() async {
-        guard canSave, let url = URL(string: trimmedURL) else { return }
-        do {
-            try await secrets.saveToken(tokenText)
-        } catch {
-            saveFailure = "Could not store the agent token in the Keychain."
-            return
+        guard !isSaving, canSave, let url = URL(string: trimmedURL) else { return }
+        isSaving = true
+        defer { isSaving = false }
+        let savedToken = tokenText
+        if !savedToken.isEmpty {
+            do {
+                try await secrets.saveToken(savedToken)
+            } catch {
+                saveFailure = "Could not store the agent token in the Keychain."
+                return
+            }
+            hasStoredToken = true
         }
         settings.save(AgentSettings(serverURL: url, spkiPin: trimmedPin))
-        tokenText = ""
+        if tokenText == savedToken {
+            tokenText = ""
+        }
         await resumeSync()
         await resumeUploader()
     }
@@ -94,8 +109,20 @@ final class SettingsViewModel {
         pinText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var fieldIssues: [SettingsIssue] {
+        AgentSettings.validate(urlText: trimmedURL, pin: trimmedPin, token: tokenText).filter { $0 != .invalidToken }
+    }
+
+    private var tokenIsAcceptable: Bool {
+        tokenText.isEmpty ? hasStoredToken : AgentSettings.isValidToken(tokenText)
+    }
+
     private var validation: [SettingsIssue] {
-        AgentSettings.validate(urlText: trimmedURL, pin: trimmedPin, token: tokenText)
+        var result = fieldIssues
+        if !tokenText.isEmpty, !AgentSettings.isValidToken(tokenText) {
+            result.append(.invalidToken)
+        }
+        return result
     }
 
     private static func message(for issue: SettingsIssue) -> String {

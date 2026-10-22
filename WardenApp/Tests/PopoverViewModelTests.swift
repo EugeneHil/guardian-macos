@@ -69,6 +69,53 @@ final class PopoverViewModelTests: XCTestCase {
         XCTAssertEqual(model.policyLine, "Check agent token")
     }
 
+    private func makeModel(syncs: [SyncState], ext: ExtensionState) async -> PopoverViewModel {
+        let harness = StoreHarness()
+        let store = harness.makeStore()
+        for sync in syncs {
+            harness.sync.continuation.yield(sync)
+        }
+        harness.ext.continuation.yield(ext)
+        await harness.settle(store)
+        return PopoverViewModel(
+            store: store, syncNow: {}, openSettings: {}, openEvents: {}, now: { EventFixture.now },
+            home: "/Users/eugene"
+        )
+    }
+
+    func testStaysActiveAfterThrottle() async {
+        let model = await makeModel(
+            syncs: [.synced(version: 2, at: now), .throttled(until: now.addingTimeInterval(30))], ext: .active
+        )
+        XCTAssertTrue(model.isProtectionActive)
+        XCTAssertEqual(model.statusTitle, "Protection active")
+    }
+
+    func testStaysActiveAfterUnauthorizedButHintRemains() async {
+        let model = await makeModel(syncs: [.synced(version: 2, at: now), .unauthorized], ext: .active)
+        XCTAssertTrue(model.isProtectionActive)
+        XCTAssertEqual(model.policyLine, "Check agent token")
+    }
+
+    func testOffWhenNeverSyncedAndUnauthorized() async {
+        let model = await makeModel(syncs: [.unauthorized], ext: .active)
+        XCTAssertFalse(model.isProtectionActive)
+    }
+
+    func testExtensionUnavailableNeverCountsAsPolicy() async {
+        let model = await makeModel(syncs: [.extensionUnavailable(version: 3)], ext: .active)
+        XCTAssertFalse(model.isProtectionActive)
+        let afterSync = await makeModel(
+            syncs: [.synced(version: 2, at: now), .extensionUnavailable(version: 3)], ext: .active
+        )
+        XCTAssertTrue(afterSync.isProtectionActive)
+    }
+
+    func testExtensionUnavailableWithoutVersionReadsNoPolicy() async {
+        let model = await makeModel(syncs: [.extensionUnavailable(version: 0)], ext: .active)
+        XCTAssertEqual(model.policyLine, "No policy yet")
+    }
+
     func testRecentRowsAreFiveNewest() async {
         let events = (0 ..< 8).map { EventFixture.make(age: Double(8 - $0)) }
         let model = await makeModel(sync: .idle, ext: .active, events: events)

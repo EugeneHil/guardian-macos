@@ -44,8 +44,10 @@ final class RecordingSettingsStore: SettingsStoring, Sendable {
 struct RejectingSecretStore: SecretStoring {
     struct Failure: Error {}
 
+    var storedToken: String?
+
     func token() async throws -> String? {
-        nil
+        storedToken
     }
 
     func saveToken(_: String) async throws {
@@ -99,5 +101,30 @@ struct StoreHarness {
         ext.continuation.finish()
         events.continuation.finish()
         await store.run()
+    }
+}
+
+/// A secret store whose `saveToken` suspends until `release()` is called.
+final class GatedSecretStore: SecretStoring, Sendable {
+    let entered = CallLatch()
+    let saved = CallLatch()
+    private let gate = AsyncStream.makeStream(of: Void.self)
+
+    func token() async throws -> String? {
+        nil
+    }
+
+    func saveToken(_: String) async throws {
+        entered.increment()
+        for await _ in gate.stream {
+            break
+        }
+        saved.increment()
+    }
+
+    func deleteToken() async throws {}
+
+    func release() {
+        gate.continuation.yield()
     }
 }

@@ -28,7 +28,7 @@ final class PopoverViewModel {
 
     /// The extension is running and a policy version is known (applied, even if the server is unreachable now).
     var isProtectionActive: Bool {
-        store.extensionState == .active && policyVersion != nil
+        store.extensionState == .active && store.lastPolicyVersion != nil
     }
 
     var statusTitle: String {
@@ -48,11 +48,11 @@ final class PopoverViewModel {
             "Policy v\(lastVersion) · server unreachable"
         case .unauthorized:
             "Check agent token"
-        case let .extensionUnavailable(version):
+        case let .extensionUnavailable(version) where version > 0:
             "Policy v\(version) · extension unavailable"
         case .throttled:
             "Server busy · retrying"
-        case .notConfigured, .idle, .unreachable(nil):
+        case .notConfigured, .idle, .unreachable(nil), .extensionUnavailable:
             "No policy yet"
         }
     }
@@ -75,13 +75,5 @@ final class PopoverViewModel {
 
     func openEventsTapped() {
         openEventsAction()
-    }
-
-    private var policyVersion: Int64? {
-        switch store.syncState {
-        case let .synced(version, _): version
-        case let .unreachable(lastVersion): lastVersion
-        default: nil
-        }
     }
 }

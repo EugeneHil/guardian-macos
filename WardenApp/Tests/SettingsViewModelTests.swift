@@ -102,6 +102,64 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertTrue(rig.model.issues.isEmpty)
     }
 
+    func testStoredTokenAllowsSavingWithoutRetyping() async {
+        let rig = makeRig(secrets: RejectingSecretStore(storedToken: validToken))
+        await rig.model.loadStoredToken()
+        rig.model.serverURLText = "https://warden.example.com"
+        rig.model.pinText = validPin
+        XCTAssertTrue(rig.model.canSave)
+        XCTAssertTrue(rig.model.issues.isEmpty)
+        await rig.model.save()
+        XCTAssertEqual(rig.settings.saveCalls.count, 1)
+        XCTAssertEqual(rig.syncResumed.count, 1)
+        XCTAssertEqual(rig.uploaderResumed.count, 1)
+        XCTAssertTrue(rig.model.issues.isEmpty)
+    }
+
+    func testNoStoredTokenAndEmptyFieldBlocksSaveWithoutIssue() async {
+        let rig = makeRig()
+        await rig.model.loadStoredToken()
+        rig.model.serverURLText = "https://warden.example.com"
+        rig.model.pinText = validPin
+        XCTAssertFalse(rig.model.canSave)
+        XCTAssertTrue(rig.model.issues.isEmpty)
+    }
+
+    func testTypedInvalidTokenShowsIssueEvenWithStoredToken() async {
+        let rig = makeRig(secrets: RejectingSecretStore(storedToken: validToken))
+        await rig.model.loadStoredToken()
+        rig.model.serverURLText = "https://warden.example.com"
+        rig.model.pinText = validPin
+        rig.model.tokenText = "wdn_bad"
+        XCTAssertFalse(rig.model.canSave)
+        XCTAssertFalse(rig.model.issues.isEmpty)
+    }
+
+    func testSaveMarksTokenAsStored() async {
+        let rig = makeRig()
+        fillValid(rig.model)
+        await rig.model.save()
+        XCTAssertTrue(rig.model.canSave)
+    }
+
+    func testSecondSaveWhileSavingIsIgnoredAndNewerTokenTextSurvives() async {
+        let gated = GatedSecretStore()
+        let rig = makeRig(secrets: gated)
+        fillValid(rig.model)
+        let model = rig.model
+        let first = Task { await model.save() }
+        await gated.entered.wait(for: 1)
+        await model.save()
+        XCTAssertEqual(gated.entered.count, 1)
+        let newer = "wdn_" + String(repeating: "ef56ab78", count: 8)
+        model.tokenText = newer
+        gated.release()
+        await first.value
+        XCTAssertEqual(model.tokenText, newer)
+        XCTAssertEqual(rig.settings.saveCalls.count, 1)
+        XCTAssertEqual(rig.syncResumed.count, 1)
+    }
+
     func testInstallAndUninstallDelegateToManager() async {
         let rig = makeRig()
         await rig.model.installTapped()
