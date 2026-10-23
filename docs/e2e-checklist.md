@@ -77,7 +77,8 @@ XPC and app state:
 Server link and secrets:
 
 - [ ] 22. The SPKI pin computed by the app from the live server certificate (`SPKIPin.hash(of:)`) matches `warden-server cert pin` and `curl --pinnedpubkey`; a wrong pin refuses the connection.
-- [ ] 23. ATS vs the self-signed certificate: the pinning delegate accepts it (an IP host should be exempt); note the pin-rejection error shape.
+- [ ] 23. ATS vs the self-signed certificate: ATS does not exempt a public host and the pinning delegate cannot override it (-1200 / -9802), so the app needs `NSAllowsArbitraryLoads` (ADR-0003); no imported certificate is needed. Verify the connection works against a public self-signed host; note the pin-rejection error shape.
+- [ ] 23a. The app connects with the server certificate NOT imported into any keychain.
 - [ ] 24. Settings (URL, pin) and the token survive an app restart.
 - [ ] 25. Keychain smoke: save the token, rebuild the app with a different signature, read (expect the re-enter hint or a prompt), save again (must recover).
 - [ ] 26. After a rebuild the Keychain dialog appears at most once a minute (the token is cached in memory).
