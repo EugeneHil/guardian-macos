@@ -1,12 +1,20 @@
 import Foundation
 import os
 
+/// Why the server could not be reached; symbolic only, safe to log and show.
+enum UnreachableReason: Sendable, Equatable {
+    case pinMismatch
+    case transport
+    case serverError
+    case other
+}
+
 enum SyncState: Equatable, Sendable {
     case notConfigured
     case idle
     // swiftlint:disable:next identifier_name
     case synced(version: Int64, at: Date)
-    case unreachable(lastVersion: Int64?)
+    case unreachable(lastVersion: Int64?, reason: UnreachableReason)
     case unauthorized
     case throttled(until: Date)
     case extensionUnavailable(version: Int64)
@@ -81,8 +89,18 @@ actor PolicySyncService {
 
     private func set(_ newState: SyncState) {
         guard newState != state else { return }
+        if case let .unreachable(_, reason) = newState, !isUnreachable(with: reason) {
+            log.error("server unreachable: \(String(describing: reason), privacy: .public)")
+        }
         state = newState
         continuation.yield(newState)
+    }
+
+    private func isUnreachable(with reason: UnreachableReason) -> Bool {
+        guard case let .unreachable(_, current) = state else {
+            return false
+        }
+        return current == reason
     }
 
     private func syncOnce() async {
@@ -102,7 +120,7 @@ actor PolicySyncService {
             await handle(error)
         } catch {
             if !(error is CancellationError) {
-                set(.unreachable(lastVersion: appliedVersion))
+                set(.unreachable(lastVersion: appliedVersion, reason: .other))
             }
         }
     }
@@ -183,7 +201,16 @@ actor PolicySyncService {
             set(.notConfigured)
         case .invalidBatch, .payloadTooLarge, .server, .transport, .pinMismatch, .malformedResponse:
             await adoptExtensionVersionIfUnknown()
-            set(.unreachable(lastVersion: appliedVersion))
+            set(.unreachable(lastVersion: appliedVersion, reason: Self.reason(for: error)))
+        }
+    }
+
+    private static func reason(for error: AgentAPIError) -> UnreachableReason {
+        switch error {
+        case .pinMismatch: .pinMismatch
+        case .transport: .transport
+        case .server: .serverError
+        default: .other
         }
     }
 
