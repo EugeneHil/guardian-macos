@@ -18,6 +18,7 @@ actor EventUploader {
     private let clock: any Clock<Duration>
     private let interval: Duration
     private let maxPending: Int
+    private let store: any PendingEventStoring
     private let log = Logger(subsystem: BundleIDs.app, category: "event-upload")
 
     private var pending: [AccessEvent] = []
@@ -29,10 +30,17 @@ actor EventUploader {
         pending.count
     }
 
+    /// True after the server rejected the token, until `resume()`.
+    var isPaused: Bool {
+        paused
+    }
+
     init(
         api: any AgentAPI, link: any ExtensionLinking, clock: any Clock<Duration>,
-        interval: Duration = .seconds(5), maxPending: Int = 5000
+        interval: Duration = .seconds(5), maxPending: Int = 5000,
+        store: any PendingEventStoring = NoPendingEventStore()
     ) {
+        self.store = store
         self.api = api
         self.link = link
         self.clock = clock
@@ -49,6 +57,7 @@ actor EventUploader {
 
     /// Ticks until cancelled. After `unauthorized` nothing is drained or sent until `resume()`.
     func run() async {
+        restorePending()
         while !Task.isCancelled {
             await tick()
             let delay = nextDelay ?? interval
@@ -69,6 +78,35 @@ actor EventUploader {
         paused = false
     }
 
+    /// Puts the events saved by a previous run ahead of anything drained later. They are not yielded on `drained`.
+    private func restorePending() {
+        do {
+            pending = try store.load() + pending
+        } catch {
+            log.error("could not load pending events, starting empty")
+        }
+        if trimPending() {
+            persist()
+        }
+    }
+
+    @discardableResult
+    private func trimPending() -> Bool {
+        guard pending.count > maxPending else { return false }
+        let dropped = pending.count - maxPending
+        pending.removeFirst(dropped)
+        log.error("event buffer full, dropped \(dropped) oldest events")
+        return true
+    }
+
+    private func persist() {
+        do {
+            try store.save(pending)
+        } catch {
+            log.error("could not save pending events")
+        }
+    }
+
     private func tick() async {
         guard !paused, !flushing else { return }
         flushing = true
@@ -84,6 +122,10 @@ actor EventUploader {
             do {
                 let events = try await link.drainEvents(max: Self.maxBatchCount)
                 pending.append(contentsOf: events)
+                trimPending()
+                if !events.isEmpty {
+                    persist()
+                }
                 for event in events {
                     drainedContinuation.yield(event)
                 }
@@ -95,11 +137,6 @@ actor EventUploader {
                 break
             }
         }
-        if pending.count > maxPending {
-            let dropped = pending.count - maxPending
-            pending.removeFirst(dropped)
-            log.error("event buffer full, dropped \(dropped) oldest events")
-        }
     }
 
     private func upload() async {
@@ -109,15 +146,18 @@ actor EventUploader {
             do {
                 try await api.postEvents(batch)
                 pending.removeFirst(batch.count)
+                persist()
             } catch AgentAPIError.payloadTooLarge {
                 if batch.count > 1 {
                     countLimit = max(1, batch.count / 2)
                 } else {
                     pending.removeFirst()
+                    persist()
                     log.error("dropped one event that is too large to upload")
                 }
             } catch AgentAPIError.invalidBatch {
                 pending.removeFirst(batch.count)
+                persist()
                 log.error("server rejected a batch of \(batch.count) events, dropped it")
             } catch AgentAPIError.unauthorized {
                 paused = true

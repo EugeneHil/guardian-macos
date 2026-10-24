@@ -42,6 +42,7 @@ final class AppEnvironment {
     private let extensionManager: ExtensionManager
     private let notifier: BlockNotifier
     private let notifierEvents: AsyncStream<AccessEvent>
+    private let loadSettings: @Sendable () -> AgentSettings
     private var services: Task<Void, Never>?
 
     init() {
@@ -55,7 +56,9 @@ final class AppEnvironment {
         )
         let link = ExtensionLink(provider: MachServiceConnector(), clock: ContinuousClock())
         let sync = PolicySyncService(api: api, link: link, clock: ContinuousClock(), now: now)
-        let uploader = EventUploader(api: api, link: link, clock: ContinuousClock())
+        let uploader = EventUploader(
+            api: api, link: link, clock: ContinuousClock(), store: FileEventStore.standard()
+        )
         let extensionManager = ExtensionManager()
         let windows = WindowRouter()
         let store = AppStateStore(
@@ -63,6 +66,7 @@ final class AppEnvironment {
             drained: uploader.drained, now: now
         )
 
+        self.loadSettings = loadSettings
         self.store = store
         self.windows = windows
         self.sync = sync
@@ -102,6 +106,15 @@ final class AppEnvironment {
                 group.addTask { await manager.refresh() }
             }
         }
+    }
+
+    /// One last bounded upload attempt before quitting. Skipped when the server is not configured or the token was
+    /// rejected; whatever stays pending is already on disk (`FileEventStore`) and is restored on the next start.
+    func flushOnQuit(timeout: Duration = .seconds(3)) async {
+        guard loadSettings().serverURL != nil else { return }
+        let uploader = uploader
+        guard await !uploader.isPaused else { return }
+        await flushWithTimeout(timeout, clock: ContinuousClock()) { await uploader.flushNow() }
     }
 
     /// Cancels the services (called from `applicationWillTerminate`). The single-consumer streams cannot be

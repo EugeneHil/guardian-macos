@@ -74,7 +74,7 @@ From [ADR-0001](docs/adr/0001-adhoc-signed-es-extension.md) and the v0.1 design:
 - The NSXPC peer requirement can only check the bundle identifier (no Team ID).
 - The pinned server certificate has no expiry or hostname check (parity with `curl --pinnedpubkey`); revocation means changing the pin.
 - The agent token is stored in the legacy file keychain, and the ad-hoc signature changes with each build, so the token may need to be re-entered after a rebuild.
-- Pending events (up to 5000) are held in memory and are lost if the app quits or crashes while the server is unreachable. Live block notifications are best effort.
+- Pending events (up to 5000) are kept in a private file in Application Support and sent after a restart; on quit the app makes one upload attempt of at most 3 s. A crash between the extension handing events over and the first save can still lose them. Live block notifications are best effort.
 - Drained events can be lost if the XPC reply arrives after the timeout or the app is cancelled (a peek/ack drain is future work).
 - One hung process lookup can fill the extension's in-flight cap and temporarily disable evaluation (fail-open by design, logged).
 - Threat model is accidental leakage by a non-malicious user. Not defended: renaming, copying or hard-linking a protected file, stopping or uninstalling the agent, tampering with the policy on the device.
