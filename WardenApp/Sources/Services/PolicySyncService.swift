@@ -18,6 +18,8 @@ enum SyncState: Equatable, Sendable {
     case unauthorized
     case throttled(until: Date)
     case extensionUnavailable(version: Int64)
+    /// The extension refused the new policy; `version` is the last applied one (0 if none).
+    case policyRejected(version: Int64)
 }
 
 /// Polls the server for the policy and keeps the extension's copy up to date.
@@ -129,7 +131,7 @@ actor PolicySyncService {
         if newETag == rejectedETag {
             // The extension already refused this policy: keep the last good one alive, but do not resend the body.
             if await extensionHoldsLastGood() {
-                set(.extensionUnavailable(version: appliedVersion ?? 0))
+                set(.policyRejected(version: appliedVersion ?? 0))
             }
             return
         }
@@ -179,7 +181,7 @@ actor PolicySyncService {
         } catch let ExtensionLinkError.invalidPolicy(reasons) {
             log.error("extension rejected the policy (\(reasons.count) problems)")
             rejectedETag = newETag
-            set(.extensionUnavailable(version: appliedVersion ?? 0))
+            set(.policyRejected(version: appliedVersion ?? 0))
         } catch is CancellationError {
             return
         } catch {

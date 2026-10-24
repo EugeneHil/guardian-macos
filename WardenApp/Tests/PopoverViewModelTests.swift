@@ -135,6 +135,30 @@ final class PopoverViewModelTests: XCTestCase {
         XCTAssertEqual(model.policyLine, "No policy yet")
     }
 
+    func testPolicyRejectedShowsVersionOfLastAppliedPolicy() async {
+        let model = await makeModel(syncs: [.policyRejected(version: 3)], ext: .active)
+        XCTAssertEqual(model.policyLine, "Policy v3 · new policy rejected")
+    }
+
+    func testPolicyRejectedWithoutAppliedPolicy() async {
+        let model = await makeModel(syncs: [.policyRejected(version: 0)], ext: .active)
+        XCTAssertEqual(model.policyLine, "Policy rejected by extension")
+    }
+
+    func testPolicyRejectedNeverCountsAsPolicy() async {
+        let model = await makeModel(syncs: [.policyRejected(version: 3)], ext: .active)
+        XCTAssertFalse(model.isProtectionActive)
+        let afterSync = await makeModel(
+            syncs: [.synced(version: 2, at: now), .policyRejected(version: 2)], ext: .active
+        )
+        XCTAssertTrue(afterSync.isProtectionActive)
+    }
+
+    func testNoFullDiskAccessHintOnPolicyRejection() async {
+        let model = await makeModel(sync: .policyRejected(version: 2), ext: .active)
+        XCTAssertNil(model.fullDiskAccessHint)
+    }
+
     func testRecentRowsAreFiveNewest() async {
         let events = (0 ..< 8).map { EventFixture.make(age: Double(8 - $0)) }
         let model = await makeModel(sync: .idle, ext: .active, events: events)

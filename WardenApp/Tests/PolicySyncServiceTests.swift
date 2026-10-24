@@ -105,12 +105,12 @@ final class PolicySyncServiceTests: XCTestCase {
         await rig.service.syncNow()
         await rig.service.syncNow()
         var state = await rig.service.state
-        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+        XCTAssertEqual(state, .policyRejected(version: 1))
         await rig.service.syncNow()
         XCTAssertEqual(rig.link.applied, [Self.body(1), Self.body(2)], "the rejected policy must not be re-pushed")
         XCTAssertEqual(rig.api.fetchEtags, [nil, "\"v1\"", "\"v1\""], "the last good ETag stays")
         state = await rig.service.state
-        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+        XCTAssertEqual(state, .policyRejected(version: 1))
         await rig.service.syncNow()
         XCTAssertEqual(rig.link.applied, [Self.body(1), Self.body(2), Self.body(3)])
         state = await rig.service.state
@@ -128,12 +128,12 @@ final class PolicySyncServiceTests: XCTestCase {
         await rig.service.syncNow()
         XCTAssertEqual(rig.link.applied, [Self.body(1), Self.body(2), Self.body(1)])
         var state = await rig.service.state
-        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+        XCTAssertEqual(state, .policyRejected(version: 1))
         rig.link.setCurrentVersion(.success(1))
         await rig.service.syncNow()
         XCTAssertEqual(rig.link.applied.count, 3, "the rejected body is never resent")
         state = await rig.service.state
-        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+        XCTAssertEqual(state, .policyRejected(version: 1))
     }
 
     func testRejectedRepushOfGoodBodyDoesNotPoisonEtag() async {
