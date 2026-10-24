@@ -50,7 +50,7 @@ final class AppStateStore {
             syncState = state
             switch state {
             case let .synced(version, _): lastPolicyVersion = version
-            case let .unreachable(lastVersion?): lastPolicyVersion = lastVersion
+            case let .unreachable(lastVersion?, _): lastPolicyVersion = lastVersion
             default: break
             }
         }
