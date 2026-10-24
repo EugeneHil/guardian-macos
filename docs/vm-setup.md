@@ -46,6 +46,6 @@ UTM → VM → **Edit → Sharing** → set the shared directory to `/Users/euge
 
 ## Notes
 
-- ES clients also need **Full Disk Access**: System Settings → Privacy & Security → Full Disk Access → add the host app (the system extension inherits it via the app's request flow on activation).
+- ES clients also need **Full Disk Access**: System Settings → Privacy & Security → Full Disk Access → add the host app (the system extension inherits it via the app's request flow on activation). In the acceptance VM (SIP disabled, `amfi_get_out_of_my_way=1`, developer mode) the ES client was created and blocking worked without Full Disk Access for both the app and the extension; this is not verified on a normal configuration, so the grant stays recommended.
 - Activating a system extension always requires the user to approve it in System Settings → General → Login Items & Extensions (→ *Endpoint Security Extensions*).
 - If `amfi_get_out_of_my_way` is silently ignored on a future macOS release, record it in ADR-0001 and escalate to the owner: the fallback is the paid Apple Developer Program.

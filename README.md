@@ -70,7 +70,7 @@ From [ADR-0001](docs/adr/0001-adhoc-signed-es-extension.md) and the v0.1 design:
 - No paid certificate: the extension is ad-hoc signed and runs only in a VM with SIP disabled and AMFI relaxed. It cannot run on an ordinary Mac.
 - Ad-hoc signing and the Full Disk Access grant are done by hand; every rebuild replaces the extension and needs the approval cycle again.
 - Deny covers writes as well as reads: policy evaluation sees every open regardless of access mode.
-- After `kill -9` the extension is back within about 1 s; the fail-open window is not yet measured (see ADR-0001, "Verified in Plan 4").
+- After `kill -9` the extension is restarted by sysextd; a fail-open window of 15 s was measured on one run (see ADR-0001, "Verified in Plan 4").
 - The NSXPC peer requirement can only check the bundle identifier (no Team ID).
 - The pinned server certificate has no expiry or hostname check (parity with `curl --pinnedpubkey`); revocation means changing the pin.
 - The agent token is stored in the legacy file keychain, and the ad-hoc signature changes with each build, so the token may need to be re-entered after a rebuild.
@@ -78,6 +78,11 @@ From [ADR-0001](docs/adr/0001-adhoc-signed-es-extension.md) and the v0.1 design:
 - Drained events can be lost if the XPC reply arrives after the timeout or the app is cancelled (a peek/ack drain is future work).
 - One hung process lookup can fill the extension's in-flight cap and temporarily disable evaluation (fail-open by design, logged).
 - Threat model is accidental leakage by a non-malicious user. Not defended: renaming, copying or hard-linking a protected file, stopping or uninstalling the agent, tampering with the policy on the device.
+
+## Writing policies
+
+- Process matchers use `teamId`, `signingId`, `signingIdPrefix` or `path` only; `name` is rejected.
+- Prefer `signingIdPrefix` or `teamId`. A `path` matcher must be the real executable at open time, not a shim such as `/usr/bin/python3`.
 
 ## Roadmap
 

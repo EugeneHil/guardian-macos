@@ -47,10 +47,11 @@ v0.1 proceeds **without** a paid certificate. The ES extension is ad-hoc signed 
 
 ## Verified in Plan 4
 
-To be filled after the VM run (owner). Do not fill with estimates.
+Measured in the acceptance VM (macOS 27.0.1 build 26A434, arm64, SIP off, AMFI off, developer mode). All values are VM-only.
 
-- ES `executable.path` form (symlink-resolved or not, `/private` prefix, firmlinks, comparison with `proc_pidpath`): to be filled after the VM run.
-- Full Disk Access requirement (is `es_new_client` refused without it, and with what error): to be filled after the VM run.
-- Measured fail-open window after `kill -9` of the extension: to be filled after the VM run.
-- Observed message->deadline values for AUTH_OPEN (and whether they exceed the 2 s cap): to be filled after the VM run.
-- `es_set_deadline_miss_mode` read-back on macOS 27: to be filled after the VM run.
+- ES `executable.path` form: the process path at open time equals `proc_pidpath` (for python3: `/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python`). The earlier exec event showed `.../bin/python3.9`, which re-execs into Python.app. `/usr/bin/python3` is a shim and never matches; its signing id is `com.apple.python3`. Target file paths arrive in `/private` form (`/tmp/x` becomes `/private/tmp/x`; `/tmp` and `/var` are symlinks into `private/`). A `path` matcher built from `sys.executable` did not match; `signingIdPrefix: com.apple.python3` did.
+- Full Disk Access requirement: not required in this VM. `es_new_client` succeeded with Full Disk Access off for both the app and the extension, and no "could not create the Endpoint Security client" fault was logged. Not verified on a normal configuration.
+- Measured fail-open window after `kill -9` of the extension: 15 s on one run (sysextd restarted the extension and the cached policy was restored). In another run the extension had restarted before the next open, so no lapse was observed.
+- Observed message->deadline values for AUTH_OPEN: not measured (no instrumentation). Watchdog check instead: 200 parallel `cat` of protected files produced 0 deadline lines in the endpointsecurity log with 4 vCPU and with 1 vCPU, and the extension pid was unchanged on 4 vCPU.
+- `es_set_deadline_miss_mode` read-back on macOS 27: the call returned 0 (extension log). No read-back API is known, so FAIL_OPEN is not directly observable.
+- XPC listener: the peer requirement is the signing identifier only. A probe signed with a foreign identifier is rejected (4097, no reply); a probe with the app identifier gets a reply. Known v0.1 limitation: ad-hoc signing lets any local process claim the identifier.
