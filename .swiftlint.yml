@@ -1,0 +1,36 @@
+included:
+  - Shared
+  - WardenApp
+  - DlpExtension
+  - CoreBridge
+  - Project.swift
+  - Tuist.swift
+excluded:
+  - build
+  - Derived
+  - WardenApp/Sources/DesignSystem/Tokens.swift
+disabled_rules:
+  - trailing_comma
+opt_in_rules:
+  - force_unwrapping
+  - force_try
+  - fatal_error_message
+line_length:
+  warning: 120
+  error: 120
+custom_rules:
+  no_dispatch_queue:
+    name: "No DispatchQueue"
+    regex: '\bDispatchQueue\b'
+    message: "Use Swift Concurrency (actors, Task, AsyncStream), not GCD."
+    severity: error
+  no_operation_queue:
+    name: "No OperationQueue"
+    regex: '\bOperationQueue\b'
+    message: "Use Swift Concurrency, not OperationQueue."
+    severity: error
+  no_combine:
+    name: "No Combine"
+    regex: '^\s*import\s+Combine\b'
+    message: "Use Swift Concurrency (AsyncStream), not Combine."
+    severity: error
