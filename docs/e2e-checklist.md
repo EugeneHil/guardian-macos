@@ -72,7 +72,7 @@ XPC and app state:
 - [ ] 18. A rejected policy arrives as `invalidPolicy`, not `unavailable`: it is not re-pushed every 10 s. **Result:** NOT RUN: the server cannot serve an invalid policy; covered by unit tests (`invalidPolicy` as a reply error, `rejectedETag`).
 - [x] 19. `lastPolicyVersion` and "Protection active" are correct after an extension restart (the policy is re-pushed on version mismatch). **Result:** PASS: observed implicitly in acceptance step 5 and section 6 (after an extension restart the app showed the cached version).
 - [x] 20. The UI after a relaunch with the server down shows the cached policy. **Result:** PASS: observed implicitly in acceptance step 5 and section 6 (cached version shown with the server stopped).
-- [ ] 21. The Full Disk Access hint appears when the extension is activated but XPC is unreachable, including during the `kill -9` restart. Known: it also shows on policy rejection (carry 29; no distinct state yet). **Result:** NOT RUN: Full Disk Access is not needed in this VM, so the hint is not reproducible.
+- [ ] 21. The Full Disk Access hint appears when the extension is activated but XPC is unreachable, including during the `kill -9` restart. It no longer shows on policy rejection (the extension rejecting a policy is a separate state). **Result:** NOT RUN: Full Disk Access is not needed in this VM, so the hint is not reproducible.
 
 Server link and secrets:
 
