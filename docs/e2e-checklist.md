@@ -68,7 +68,7 @@ Extension and Endpoint Security:
 XPC and app state:
 
 - [ ] 16. NSXPC app↔extension end to end after the `@objc` reply-block mirror: calls succeed, `proxy as? WardenExtensionReplyXPC` works, and an `invalidPolicy` error arrives with its `userInfo` (validation lines) intact. **Result:** PARTIAL: calls succeed end to end; the `invalidPolicy`-with-`userInfo` half was not run (the server cannot serve an invalid policy).
-- [ ] 17. With the extension uninstalled, app memory and Task count stay flat for about 1 h. **Result:** PENDING: the 1 h run with the extension uninstalled is in progress; the owner will update this item.
+- [x] 17. With the extension uninstalled, app memory and Task count stay flat for about 1 h. **Result:** PASS (app process only): VM, macOS 27.0.1 arm64, WardenApp without the system extension, one sample per minute, 60 samples over about 59 min. RSS dropped about 5 MB in the first 15 min (startup warm-up) and then stayed flat at about 91 MB (variation up to 16 KB); threads stayed at 7 with one transient sample of 8. Sampled rows: 19:45:07 rss_kb=96208 threads=7; 19:59:08 rss_kb=90928 threads=8; 20:14:09 rss_kb=91008 threads=7; 20:29:10 rss_kb=90992 threads=7; 20:44:11 rss_kb=90992 threads=7. No growth, so no leak was observed in one hour. Scope: the extension was not running, so extension memory is not covered, and the app was idle with no events flowing.
 - [ ] 18. A rejected policy arrives as `invalidPolicy`, not `unavailable`: it is not re-pushed every 10 s. **Result:** NOT RUN: the server cannot serve an invalid policy; covered by unit tests (`invalidPolicy` as a reply error, `rejectedETag`).
 - [x] 19. `lastPolicyVersion` and "Protection active" are correct after an extension restart (the policy is re-pushed on version mismatch). **Result:** PASS: observed implicitly in acceptance step 5 and section 6 (after an extension restart the app showed the cached version).
 - [x] 20. The UI after a relaunch with the server down shows the cached policy. **Result:** PASS: observed implicitly in acceptance step 5 and section 6 (cached version shown with the server stopped).
@@ -102,4 +102,4 @@ Filled by the owner for each release. Each row cites the checklist item numbers 
 
 | Date | Build (commit/tag) | Pass/fail | Notes |
 |------|--------------------|-----------|-------|
-| 2026-10-24 | `develop` at e91bb4b plus this docs change | pass with noted gaps | Items 3, 5, 6, 7, 13, 18, 21 and 27 were not run, 12 and 16 are partial, 17 is pending (see the results in section 7). |
+| 2026-10-24 | `develop` at e91bb4b plus this docs change | pass with noted gaps | Items 3, 5, 6, 7, 13, 18, 21 and 27 were not run, 12 and 16 are partial, 17 passed for the app process only (see the results in section 7). |
