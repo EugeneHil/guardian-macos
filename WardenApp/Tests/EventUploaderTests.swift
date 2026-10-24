@@ -2,18 +2,22 @@ import Foundation
 import XCTest
 
 final class EventUploaderTests: XCTestCase {
-    private struct Rig {
+    struct Rig {
         let api = FakeAgentAPI()
         let link = FakeExtensionLink()
         let clock = ManualClock()
         let uploader: EventUploader
 
-        init(maxPending: Int = 5000) {
-            uploader = EventUploader(api: api, link: link, clock: clock, maxPending: maxPending)
+        init(maxPending: Int = 5000, store: (any PendingEventStoring)? = nil) {
+            if let store {
+                uploader = EventUploader(api: api, link: link, clock: clock, maxPending: maxPending, store: store)
+            } else {
+                uploader = EventUploader(api: api, link: link, clock: clock, maxPending: maxPending)
+            }
         }
     }
 
-    private static func events(_ count: Int, from start: Int = 0, file: String = "/data/file") -> [AccessEvent] {
+    static func events(_ count: Int, from start: Int = 0, file: String = "/data/file") -> [AccessEvent] {
         (start ..< start + count).map { index in
             AccessEvent(
                 id: UUID(), timestamp: Date(timeIntervalSince1970: Double(index)),
@@ -193,7 +197,7 @@ final class EventUploaderTests: XCTestCase {
         XCTAssertEqual(pending, 0)
     }
 
-    private static func firstDrained(_ uploader: EventUploader, count: Int) async -> [AccessEvent] {
+    static func firstDrained(_ uploader: EventUploader, count: Int) async -> [AccessEvent] {
         var result: [AccessEvent] = []
         for await event in uploader.drained {
             result.append(event)

@@ -42,6 +42,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         environment.start()
     }
 
+    /// Gives the uploader a few seconds to send what is pending, then lets the app quit.
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        Task {
+            await environment.flushOnQuit()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_: Notification) {
         environment.stop()
     }
