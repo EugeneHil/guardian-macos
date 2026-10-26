@@ -108,6 +108,8 @@ Note: after a VM reboot the replaced extension build had to be reinstalled and a
 
 ## 8. Results
 
+Runs recorded here predate the rename to Guardian (2026-10-26); identifiers are shown under their current names.
+
 Filled by the owner for each release. Each row cites the checklist item numbers (section 7 numbering) that passed or failed.
 
 | Date | Build (commit/tag) | Pass/fail | Notes |

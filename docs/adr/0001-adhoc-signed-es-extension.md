@@ -27,6 +27,8 @@ v0.1 proceeds **without** a paid certificate. The ES extension is ad-hoc signed 
 
 ## Exact configuration that worked
 
+Spike identifiers are written in their renamed form; the spike branch in git history has the original ones.
+
 - Signing: ad-hoc (`codesign --force --sign -`), extension signed first, then the app; no Team ID; `ENABLE_HARDENED_RUNTIME=NO`; `CODE_SIGN_STYLE=Manual`; deployment target macOS 15.0; extension linked with `-lEndpointSecurity`.
 - Extension entitlements: `com.apple.developer.endpoint-security.client = true` and `com.apple.security.application-groups = ["dev.<product>.spike"]`.
 - App entitlement: `com.apple.developer.system-extension.install = true`.
