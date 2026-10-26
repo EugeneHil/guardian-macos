@@ -63,6 +63,16 @@ scripts/coverage.sh     # tests with coverage, then the >= 80 % line gate (scrip
 scripts/lint.sh         # swiftlint --strict and swiftformat --lint
 ```
 
+## Diagnostics
+
+The extension writes timing and counter summaries to the unified log once a minute (only when something changed): subsystem `io.github.eugenehil.warden`, category `diag`. Only numbers and fixed words are logged, never paths or identities.
+
+```sh
+log show --last 10m --info --debug --predicate 'subsystem == "io.github.eugenehil.warden" && category == "diag"'
+```
+
+`.debug` lines add per-candidate detail (opener and responsible pid and pid version); see `docs/e2e-checklist.md`.
+
 ## Limitations
 
 From [ADR-0001](docs/adr/0001-adhoc-signed-es-extension.md) and the v0.1 design:
