@@ -69,15 +69,12 @@ GROUPS = {
     "docs": Group(PATTERN, is_docs_path, True),
     "swift": Group(PATTERN, is_swift_path, True),
     "scripts": Group(PATTERN, is_scripts_path, True),
-    "identity": Group(IDENTITY_PATTERN, lambda path: True, False),
-    "all": Group(PATTERN, lambda path: True, False),
+    "identity": Group(IDENTITY_PATTERN, lambda path: True, True),
+    "all": Group(PATTERN, lambda path: True, True),
 }
 
 # Groups whose path names are checked for a wider set of files than their contents.
 NAME_PATHS = {"swift": is_swift_name_path}
-
-# Groups in which a line matching the identity patterns is exempt (the `identity` group owns it).
-IDENTITY_LINES_EXEMPT = {"swift"}
 
 # Files exempt from a group because they must spell the old name.
 SELF = "scripts/test_residual_names.py"
@@ -134,8 +131,6 @@ def offenders(group_name):
             continue
         for number, line in enumerate(text.splitlines(), 1):
             if not group.pattern.search(line) or is_exempt_line(line):
-                continue
-            if group_name in IDENTITY_LINES_EXEMPT and IDENTITY_PATTERN.search(line):
                 continue
             found.append(f"{path}:{number}: {line.strip()}")
     return found

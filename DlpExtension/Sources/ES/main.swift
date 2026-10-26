@@ -22,7 +22,7 @@ let controllerLog: @Sendable (String) -> Void = { line in
 }
 
 let holder = PolicyHolder()
-let store = PolicyStore(fileURL: URL(fileURLWithPath: "/Library/Application Support/Warden/policy.json"))
+let store = PolicyStore(fileURL: URL(fileURLWithPath: DataPaths.policyFile))
 let queue = EventQueue()
 let diagnostics = DiagnosticsRecorder()
 let diagLogger = Logger(subsystem: BundleIDs.app, category: "diag")

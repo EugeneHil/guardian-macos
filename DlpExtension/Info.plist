@@ -23,7 +23,7 @@
     <key>NSEndpointSecurityEarlyBoot</key>
     <false/>
     <key>NSEndpointSecurityMachServiceName</key>
-    <string>io.github.eugenehil.warden.ext</string>
+    <string>io.github.eugenehil.guardian.ext</string>
     <key>NSEndpointSecurityRebootRequired</key>
     <false/>
 </dict>

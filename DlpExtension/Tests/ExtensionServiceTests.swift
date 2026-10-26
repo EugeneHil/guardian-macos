@@ -83,7 +83,7 @@ final class ExtensionServiceTests: XCTestCase {
             XCTFail("expected an error")
         } catch {
             let nsError = error as NSError
-            XCTAssertEqual(nsError.domain, "io.github.eugenehil.warden")
+            XCTAssertEqual(nsError.domain, "io.github.eugenehil.guardian")
             let lines = nsError.userInfo[GuardianXPCError.validationErrorsKey] as? [String]
             XCTAssertFalse(lines?.isEmpty ?? true)
             XCTAssertEqual(nsError.code, GuardianXPCError.invalidPolicyCode)
@@ -190,6 +190,6 @@ final class ExtensionServiceTests: XCTestCase {
     }
 
     func testPeerRequirementPinsBundleIdentifier() {
-        XCTAssertEqual(ExtensionService.peerRequirement(), #"identifier "io.github.eugenehil.warden""#)
+        XCTAssertEqual(ExtensionService.peerRequirement(), #"identifier "io.github.eugenehil.guardian""#)
     }
 }

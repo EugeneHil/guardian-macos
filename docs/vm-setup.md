@@ -44,6 +44,31 @@ Then shut down and take the snapshot **`es-ready`**. Roll back to it whenever th
 
 UTM → VM → **Edit → Sharing** → set the shared directory to `/Users/eugene/Mine/git/guardian` (VirtioFS). In the guest it appears in Finder under *Shared Directory*. Build on the host, copy the `.app` into the guest's `/Applications`, run there.
 
+## 6. Reinstall from a build with a previous bundle id
+
+The extension's bundle id is its identity: a build with a different bundle id is a different extension, and the old
+one is not replaced. The Keychain item, the app's settings and its data live under the bundle id, so they start empty
+(enter the token again). Do this once in the guest, before the first run of a build with a new bundle id:
+
+1. Open the old app and deactivate its extension (or remove it from System Settings → General → Login Items &
+   Extensions), then delete the old app from `/Applications` and reboot the guest.
+2. `systemextensionsctl list` must show no entry with the previous bundle id. An entry such as "terminated waiting to
+   uninstall on reboot" means the reboot has not happened yet.
+3. Delete what the previous build left on disk. `<old id>` below is the previous bundle id: the name of the old
+   `.app`'s `CFBundleIdentifier`, or whatever the first listing shows. Each command is separate because zsh aborts a
+   line when one of its globs matches nothing.
+   - Find the old data: `ls -d ~/Library/Application\ Support/io.github.eugenehil.*`
+     and `ls -d ~/Library/Preferences/io.github.eugenehil.*`
+     and `ls -d /Library/Application\ Support/*/policy.json` (the new `Guardian` directory is created at step 4,
+     so only the previous build's directory is listed now).
+   - Remove them: `rm -r ~/Library/Application\ Support/<old id>`, `rm ~/Library/Preferences/<old id>.plist`,
+     and `sudo rm -r` on the directory that holds the old `policy.json`.
+   - Check, then delete the old Keychain item with the stale token (never add `-w` or `-g`, they print the secret):
+     `security find-generic-password -s '<old id>.agent-token'`, then
+     `security delete-generic-password -s '<old id>.agent-token'`.
+4. Open the new app from `/Applications`, approve the extension again, and enter the token. Now
+   `systemextensionsctl list` must show only `io.github.eugenehil.guardian.ext` as `[activated enabled]`.
+
 ## Notes
 
 - ES clients also need **Full Disk Access**: System Settings → Privacy & Security → Full Disk Access → add the host app (the system extension inherits it via the app's request flow on activation). In the acceptance VM (SIP disabled, `amfi_get_out_of_my_way=1`, developer mode) the ES client was created and blocking worked without Full Disk Access for both the app and the extension; this is not verified on a normal configuration, so the grant stays recommended.
