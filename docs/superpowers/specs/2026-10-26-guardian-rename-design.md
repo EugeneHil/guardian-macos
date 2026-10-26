@@ -98,9 +98,10 @@ PR-2 and PR-3 of macos are separate so the identity change can be reverted alone
 ## Verification
 
 - After each PR: lint, unit tests, coverage gate, tokens check, CI green.
-- Residual check: case-insensitive grep for `warden`, `wdn` (except `wdn_`), `WRD-` in tracked files of each repo
+- Residual check: case-insensitive grep for `warden` and `wdn` (except `wdn_`) in tracked files of each repo
   must return only an explicit allow-list (this spec, "formerly Warden" notes, historical commit references,
-  the token prefix `wdn_`). The allow-list is a file in the repo, checked by a test.
+  the token prefix `wdn_`). Old `WRD-<n>` ticket ids are historical and are not checked. The allow-list lives in
+  a test in each repo.
 - After VPS cutover: pinned `/healthz` 200, wrong pin refused, token GET `/api/v1/policy` with `ETag`,
   admin panel loads, service stop/start clean.
 - After VM acceptance: app shows `Protection active`, policy synced, a blocked access produces an event on the server.
