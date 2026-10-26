@@ -65,10 +65,10 @@ def is_scripts_path(path):
 
 
 GROUPS = {
-    "submodule": Group(PATTERN, is_submodule_path, False),
+    "submodule": Group(PATTERN, is_submodule_path, True),
     "docs": Group(PATTERN, is_docs_path, True),
-    "swift": Group(PATTERN, is_swift_path, False),
-    "scripts": Group(PATTERN, is_scripts_path, False),
+    "swift": Group(PATTERN, is_swift_path, True),
+    "scripts": Group(PATTERN, is_scripts_path, True),
     "identity": Group(IDENTITY_PATTERN, lambda path: True, False),
     "all": Group(PATTERN, lambda path: True, False),
 }
@@ -175,6 +175,29 @@ def broken_references():
     return broken
 
 
+CORE_DIR = os.path.join(ROOT, "external", "guardian-core")
+
+
+def core_problems(core_dir):
+    """Reasons why the checked-out core is not a post-rename guardian-core."""
+    if not os.path.isfile(os.path.join(core_dir, "CMakeLists.txt")):
+        return [f"{core_dir} is not checked out; run `git submodule update --init`"]
+    problems = []
+    if not os.path.isdir(os.path.join(core_dir, "include", "guardian")):
+        problems.append("include/guardian/ is missing")
+    if os.path.isdir(os.path.join(core_dir, "include", "warden")):
+        problems.append("include/warden/ still exists")
+    grep = subprocess.run(
+        ["git", "-C", core_dir, "grep", "-I", "-i", "-l", "-E", "namespace warden"],
+        capture_output=True,
+    )
+    if grep.returncode == 0:
+        problems.append("namespace warden found in: " + grep.stdout.decode("utf-8").strip())
+    elif grep.returncode != 1:
+        problems.append("git grep failed: " + grep.stderr.decode("utf-8").strip())
+    return problems
+
+
 class ExemptLine(unittest.TestCase):
     def test_only_the_exact_note_is_exempt(self):
         self.assertTrue(is_exempt_line("> Formerly Warden."))
@@ -192,6 +215,13 @@ class CrossReferences(unittest.TestCase):
 
 
 class ResidualNames(unittest.TestCase):
+    def test_core_submodule_is_renamed(self):
+        # Fails (never skips) when the pin is a pre-rename core or the submodule is absent.
+        problems = core_problems(CORE_DIR)
+        self.assertEqual(
+            problems, [], "external/guardian-core is not a renamed core:\n" + "\n".join(problems)
+        )
+
     def _check(self, name):
         if not GROUPS[name].enforced:
             self.skipTest(f"group {name!r} is not enforced yet")

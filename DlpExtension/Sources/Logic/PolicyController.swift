@@ -40,7 +40,7 @@ actor PolicyController {
                 log("no cached policy; allowing until one is applied")
                 return
             }
-            let policy = try WDPolicy(json: data)
+            let policy = try GDPolicy(json: data)
             guard generation == startedAt else {
                 log("ignoring cached policy: a newer policy was applied while loading")
                 return
@@ -57,12 +57,12 @@ actor PolicyController {
     /// Validates, activates (memory first, synchronously, so the last-started apply always wins), clears the ES
     /// cache and persists. An invalid policy keeps the previous engine; a failing save is logged only.
     func apply(_ data: Data) async throws -> Int64 {
-        let policy: WDPolicy
+        let policy: GDPolicy
         do {
-            policy = try WDPolicy(json: data)
+            policy = try GDPolicy(json: data)
         } catch {
             let nsError = error as NSError
-            let details = nsError.userInfo[WDPolicyValidationErrorsKey] as? [String]
+            let details = nsError.userInfo[GDPolicyValidationErrorsKey] as? [String]
             let messages = details ?? [nsError.localizedDescription]
             log("rejected pushed policy: \(messages.joined(separator: "; "))")
             throw PolicyApplyError.invalid(messages)

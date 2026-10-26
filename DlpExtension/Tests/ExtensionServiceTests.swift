@@ -7,7 +7,7 @@ private final class NoCache: CacheClearing {
 }
 
 /// Records pushed events and lets a test await the next one without sleeping.
-private final class FakeClient: NSObject, WardenClientXPC, Sendable {
+private final class FakeClient: NSObject, GuardianClientXPC, Sendable {
     private let stream: AsyncStream<Data>
     private let continuation: AsyncStream<Data>.Continuation
 
@@ -84,9 +84,9 @@ final class ExtensionServiceTests: XCTestCase {
         } catch {
             let nsError = error as NSError
             XCTAssertEqual(nsError.domain, "io.github.eugenehil.warden")
-            let lines = nsError.userInfo[WardenXPCError.validationErrorsKey] as? [String]
+            let lines = nsError.userInfo[GuardianXPCError.validationErrorsKey] as? [String]
             XCTAssertFalse(lines?.isEmpty ?? true)
-            XCTAssertEqual(nsError.code, WardenXPCError.invalidPolicyCode)
+            XCTAssertEqual(nsError.code, GuardianXPCError.invalidPolicyCode)
         }
         let current = await rig.service.currentPolicyVersion()
         XCTAssertEqual(current, 3)

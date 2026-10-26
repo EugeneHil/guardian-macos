@@ -2,8 +2,8 @@ import CoreBridge
 import Foundation
 import Testing
 
-private func policy(_ json: String) throws -> WDPolicy {
-    try WDPolicy(json: Data(json.utf8))
+private func policy(_ json: String) throws -> GDPolicy {
+    try GDPolicy(json: Data(json.utf8))
 }
 
 private func chromeEnvPolicy(matcher: String = #"{"signingIdPrefix": "com.google.Chrome"}"#) -> String {
@@ -14,8 +14,8 @@ private func chromeEnvPolicy(matcher: String = #"{"signingIdPrefix": "com.google
     """
 }
 
-private func process(_ path: String = "/bin/x", signingId: String = "", teamId: String = "") -> WDProcessInfo {
-    WDProcessInfo(path: path, signingId: signingId, teamId: teamId)
+private func process(_ path: String = "/bin/x", signingId: String = "", teamId: String = "") -> GDProcessInfo {
+    GDProcessInfo(path: path, signingId: signingId, teamId: teamId)
 }
 
 struct CoreBridgeTests {
@@ -23,8 +23,8 @@ struct CoreBridgeTests {
         let parsed = try policy(chromeEnvPolicy())
         #expect(parsed.version == 7)
         #expect(parsed.ruleCount == 1)
-        let engine = WDEngine(policy: parsed)
-        let request = WDAccessRequest(
+        let engine = GDEngine(policy: parsed)
+        let request = GDAccessRequest(
             filePath: "/Users/a/p/.env",
             process: process(signingId: "com.google.Chrome.helper"),
             responsible: nil
@@ -35,8 +35,8 @@ struct CoreBridgeTests {
     }
 
     @Test func allowsNonBlocklistedProcess() throws {
-        let engine = try WDEngine(policy: policy(chromeEnvPolicy()))
-        let request = WDAccessRequest(
+        let engine = try GDEngine(policy: policy(chromeEnvPolicy()))
+        let request = GDAccessRequest(
             filePath: "/Users/a/p/.env",
             process: process(signingId: "com.apple.Terminal"),
             responsible: nil
@@ -53,22 +53,22 @@ struct CoreBridgeTests {
             Issue.record("expected the policy to be rejected")
         } catch {
             let nsError = error as NSError
-            #expect(nsError.domain == WDPolicyErrorDomain)
-            let lines = nsError.userInfo[WDPolicyValidationErrorsKey] as? [String] ?? []
+            #expect(nsError.domain == GDPolicyErrorDomain)
+            let lines = nsError.userInfo[GDPolicyValidationErrorsKey] as? [String] ?? []
             #expect(lines.contains { $0.hasPrefix("rules[0]") })
         }
     }
 
     @Test func normalizesProcessPath() throws {
-        let engine = try WDEngine(policy: policy(chromeEnvPolicy(matcher: #"{"path": "/private/tmp/x"}"#)))
-        let request = WDAccessRequest(filePath: "/Users/a/.env", process: process("/tmp/x"), responsible: nil)
+        let engine = try GDEngine(policy: policy(chromeEnvPolicy(matcher: #"{"path": "/private/tmp/x"}"#)))
+        let request = GDAccessRequest(filePath: "/Users/a/.env", process: process("/tmp/x"), responsible: nil)
         #expect(engine.evaluate(request).deny)
     }
 
     @Test func responsibleProcessIsMatched() throws {
         let matcher = #"{"signingIdPrefix": "com.anthropic.claude"}"#
-        let engine = try WDEngine(policy: policy(chromeEnvPolicy(matcher: matcher)))
-        let request = WDAccessRequest(
+        let engine = try GDEngine(policy: policy(chromeEnvPolicy(matcher: matcher)))
+        let request = GDAccessRequest(
             filePath: "/Users/a/.env",
             process: process("/usr/bin/cat"),
             responsible: process("/Applications/Claude.app/x", signingId: "com.anthropic.claude")
@@ -77,7 +77,7 @@ struct CoreBridgeTests {
     }
 
     @Test func prefilterTakesRawBytes() throws {
-        let engine = try WDEngine(policy: policy(chromeEnvPolicy()))
+        let engine = try GDEngine(policy: policy(chromeEnvPolicy()))
         func check(_ bytes: [CChar]) -> Bool {
             bytes.withUnsafeBufferPointer { buffer in
                 guard let base = buffer.baseAddress else { return false }
@@ -90,6 +90,6 @@ struct CoreBridgeTests {
     }
 
     @Test func coreVersionIsPinned() {
-        #expect(WDEngine.coreVersion() == "0.1.0")
+        #expect(GDEngine.coreVersion() == "0.2.0")
     }
 }

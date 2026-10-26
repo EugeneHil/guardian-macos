@@ -18,20 +18,20 @@ let adhoc: SettingsDictionary = [
     "MACOSX_DEPLOYMENT_TARGET": "15.0",
 ]
 
-/// Consumers of the CoreBridge static framework link the CMake-built warden-core archive themselves.
-let coreLib = "$(SRCROOT)/build/corecpp/libwarden_core.a -lc++"
+/// Consumers of the CoreBridge static framework link the CMake-built guardian-core archive themselves.
+let coreLib = "$(SRCROOT)/build/corecpp/libguardian_core.a -lc++"
 
-/// System frameworks used by the app's services (also compiled into WardenAppTests).
+/// System frameworks used by the app's services (also compiled into GuardianAppTests).
 let appFrameworks: [TargetDependency] = [
     .sdk(name: "SystemExtensions", type: .framework),
     .sdk(name: "UserNotifications", type: .framework),
 ]
 
 let project = Project(
-    name: "Warden",
+    name: "Guardian",
     targets: [
         .target(
-            name: "WardenApp",
+            name: "GuardianApp",
             destinations: .macOS,
             product: .app,
             bundleId: appID,
@@ -41,8 +41,8 @@ let project = Project(
                 "NSAppTransportSecurity": ["NSAllowsArbitraryLoads": true],
                 "NSSystemExtensionUsageDescription": "Guardian installs a system extension that enforces DLP policy.",
             ]),
-            sources: ["WardenApp/Sources/**", "Shared/**"],
-            entitlements: .file(path: "WardenApp/WardenApp.entitlements"),
+            sources: ["GuardianApp/Sources/**", "Shared/**"],
+            entitlements: .file(path: "GuardianApp/GuardianApp.entitlements"),
             dependencies: [.target(name: "DlpExtension")] + appFrameworks,
             settings: .settings(base: adhoc)
         ),
@@ -70,14 +70,17 @@ let project = Project(
             settings: .settings(base: adhoc.merging(["OTHER_LDFLAGS": .string(coreLib)]) { $1 })
         ),
         .target(
-            name: "WardenAppTests",
+            name: "GuardianAppTests",
             destinations: .macOS,
             product: .unitTests,
             bundleId: "\(appID).tests",
             sources: [
                 "Shared/**",
-                .glob("WardenApp/Sources/**", excluding: ["WardenApp/Sources/Entry/**", "WardenApp/Sources/Views/**"]),
-                "WardenApp/Tests/**",
+                .glob(
+                    "GuardianApp/Sources/**",
+                    excluding: ["GuardianApp/Sources/Entry/**", "GuardianApp/Sources/Views/**"]
+                ),
+                "GuardianApp/Tests/**",
             ],
             dependencies: [.target(name: "CoreBridge")] + appFrameworks,
             settings: .settings(base: adhoc.merging(["OTHER_LDFLAGS": .string(coreLib)]) { $1 })
@@ -85,7 +88,7 @@ let project = Project(
         // Hosts the CMake pre-build script alone: its unsandboxed script phase must not share a
         // target with CoreBridge's "Copy Headers" phase (Xcode warns about that combination).
         .target(
-            name: "WardenCoreLib",
+            name: "GuardianCoreLib",
             destinations: .macOS,
             product: .staticLibrary,
             bundleId: "\(appID).corelib",
@@ -93,7 +96,7 @@ let project = Project(
             scripts: [
                 .pre(
                     script: "\"$SRCROOT/scripts/build-corecpp.sh\"",
-                    name: "Build warden-core",
+                    name: "Build guardian-core",
                     basedOnDependencyAnalysis: false
                 ),
             ],
@@ -106,12 +109,12 @@ let project = Project(
             bundleId: "\(appID).corebridge",
             sources: ["CoreBridge/Sources/**"],
             headers: .headers(public: ["CoreBridge/Sources/**/*.h"]),
-            dependencies: [.target(name: "WardenCoreLib")],
+            dependencies: [.target(name: "GuardianCoreLib")],
             settings: .settings(base: adhoc.merging([
                 "DEFINES_MODULE": "YES",
                 "CLANG_CXX_LANGUAGE_STANDARD": "c++17",
                 "CLANG_ENABLE_OBJC_ARC": "YES",
-                "HEADER_SEARCH_PATHS": "$(SRCROOT)/external/warden-core/include",
+                "HEADER_SEARCH_PATHS": "$(SRCROOT)/external/guardian-core/include",
                 "OTHER_LDFLAGS": .string(coreLib),
             ]) { $1 })
         ),
@@ -126,16 +129,16 @@ let project = Project(
         ),
     ],
     schemes: [
-        .scheme(name: "WardenApp", shared: true, buildAction: .buildAction(targets: ["WardenApp"])),
+        .scheme(name: "GuardianApp", shared: true, buildAction: .buildAction(targets: ["GuardianApp"])),
         .scheme(
             name: "DlpExtensionTests", shared: true,
             buildAction: .buildAction(targets: ["DlpExtensionTests"]),
             testAction: .targets(["DlpExtensionTests"])
         ),
         .scheme(
-            name: "WardenAppTests", shared: true,
-            buildAction: .buildAction(targets: ["WardenAppTests"]),
-            testAction: .targets(["WardenAppTests"])
+            name: "GuardianAppTests", shared: true,
+            buildAction: .buildAction(targets: ["GuardianAppTests"]),
+            testAction: .targets(["GuardianAppTests"])
         ),
         .scheme(
             name: "CoreBridgeTests", shared: true,

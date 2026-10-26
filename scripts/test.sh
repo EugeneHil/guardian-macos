@@ -10,9 +10,9 @@ coverage=NO
 
 mkdir -p build
 run_tuist generate --no-open
-for scheme in CoreBridgeTests DlpExtensionTests WardenAppTests; do
+for scheme in CoreBridgeTests DlpExtensionTests GuardianAppTests; do
   rm -rf "build/$scheme.xcresult"
-  xcodebuild test -workspace Warden.xcworkspace -scheme "$scheme" -destination 'platform=macOS' \
+  xcodebuild test -workspace Guardian.xcworkspace -scheme "$scheme" -destination 'platform=macOS' \
     -derivedDataPath build -enableCodeCoverage "$coverage" -resultBundlePath "build/$scheme.xcresult" \
     -test-timeouts-enabled YES -default-test-execution-time-allowance 60 \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" >"build/$scheme.log" 2>&1 \

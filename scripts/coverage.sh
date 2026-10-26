@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 
 scripts/test.sh --coverage
 reports=()
-for scheme in DlpExtensionTests WardenAppTests; do
+for scheme in DlpExtensionTests GuardianAppTests; do
   json="build/$scheme.coverage.json"
   xcrun xccov view --report --json "build/$scheme.xcresult" >"$json"
   reports+=("$json")
