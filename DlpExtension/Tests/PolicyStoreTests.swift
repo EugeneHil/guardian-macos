@@ -69,21 +69,21 @@ final class PolicyStoreTests: XCTestCase {
     }
 
     func testSaveCreatesDirectoryWithMode0700() async throws {
-        let sub = dir.appendingPathComponent("Warden")
+        let sub = dir.appendingPathComponent("Guardian")
         let store = PolicyStore(fileURL: sub.appendingPathComponent("policy.json"))
         try await store.save(Data("x".utf8))
         XCTAssertEqual(try mode(sub), 0o700)
     }
 
     func testPrepareCreatesDirectoryWithMode0700() async throws {
-        let sub = dir.appendingPathComponent("Warden")
+        let sub = dir.appendingPathComponent("Guardian")
         let store = PolicyStore(fileURL: sub.appendingPathComponent("policy.json"))
         try await store.prepareDirectory()
         XCTAssertEqual(try mode(sub), 0o700)
     }
 
     func testPrepareTightensExistingDirectory() async throws {
-        let sub = dir.appendingPathComponent("Warden")
+        let sub = dir.appendingPathComponent("Guardian")
         try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: false)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sub.path)
         let store = PolicyStore(fileURL: sub.appendingPathComponent("policy.json"))
@@ -109,7 +109,7 @@ final class PolicyStoreTests: XCTestCase {
     func testPrepareFailsWhenParentIsAFile() async throws {
         let blocker = dir.appendingPathComponent("file")
         try Data("x".utf8).write(to: blocker)
-        let store = PolicyStore(fileURL: blocker.appendingPathComponent("Warden/policy.json"))
+        let store = PolicyStore(fileURL: blocker.appendingPathComponent("Guardian/policy.json"))
         do {
             try await store.prepareDirectory()
             XCTFail("expected prepareDirectory to throw")

@@ -8,8 +8,8 @@ final class PolicyHolderTests: XCTestCase {
         return copy.withUTF8 { holder.fastPathAllows(UnsafeRawBufferPointer($0)) }
     }
 
-    private func policy() throws -> WDPolicy {
-        try WDPolicy(json: PolicyFixtures.policy(version: 7))
+    private func policy() throws -> GDPolicy {
+        try GDPolicy(json: PolicyFixtures.policy(version: 7))
     }
 
     func testAllowsUntilPolicyLoaded() {

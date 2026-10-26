@@ -133,7 +133,7 @@ struct OpenCoordinatorRig {
     ) throws -> Self {
         let holder = PolicyHolder()
         if withPolicy {
-            try holder.set(policy: WDPolicy(json: Data(CoordinatorFixture.policy.utf8)))
+            try holder.set(policy: GDPolicy(json: Data(CoordinatorFixture.policy.utf8)))
         }
         let clock = ManualClock()
         let queue = EventQueue(clock: ManualClock())

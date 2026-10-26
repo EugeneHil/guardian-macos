@@ -4,7 +4,7 @@ import Synchronization
 /// Fans live events out to the subscribed app clients. `eventRecorded` is fire-and-forget, so a call returns at once
 /// and a dead peer cannot stall the hub; `drainEvents` is the reliable path.
 actor ClientHub {
-    private var clients: [UInt64: any WardenClientXPC] = [:]
+    private var clients: [UInt64: any GuardianClientXPC] = [:]
     /// Connections that already went away: a late `add` for one of them is ignored.
     private var closed: Set<UInt64> = []
 
@@ -13,7 +13,7 @@ actor ClientHub {
     }
 
     /// Replaces any client already registered under the same key.
-    func add(key: UInt64, client: any WardenClientXPC) {
+    func add(key: UInt64, client: any GuardianClientXPC) {
         guard !closed.contains(key) else { return }
         clients[key] = client
     }
@@ -32,7 +32,7 @@ actor ClientHub {
 }
 
 /// Exported once per connection so `subscribe` knows which connection a client belongs to.
-private final class ConnectionEndpoint: NSObject, WardenExtensionXPC, Sendable {
+private final class ConnectionEndpoint: NSObject, GuardianExtensionXPC, Sendable {
     private let service: ExtensionService
     private let key: UInt64
 
@@ -53,13 +53,13 @@ private final class ConnectionEndpoint: NSObject, WardenExtensionXPC, Sendable {
         await service.drainEvents(max: max)
     }
 
-    func subscribe(client: any WardenClientXPC) async {
+    func subscribe(client: any GuardianClientXPC) async {
         await service.subscribe(client: client, connectionKey: key)
     }
 }
 
 /// XPC server of the system extension. Calls are plain async members so tests can drive them directly.
-final class ExtensionService: NSObject, WardenExtensionXPC, NSXPCListenerDelegate, Sendable {
+final class ExtensionService: NSObject, GuardianExtensionXPC, NSXPCListenerDelegate, Sendable {
     private let policy: PolicyController
     private let events: EventQueue
     private let hub = ClientHub()
@@ -94,10 +94,10 @@ final class ExtensionService: NSObject, WardenExtensionXPC, NSXPCListenerDelegat
             return try await policy.apply(policyData)
         } catch let PolicyApplyError.invalid(lines) {
             throw NSError(
-                domain: WardenXPCError.domain, code: WardenXPCError.invalidPolicyCode,
+                domain: GuardianXPCError.domain, code: GuardianXPCError.invalidPolicyCode,
                 userInfo: [
                     NSLocalizedDescriptionKey: lines.joined(separator: "; "),
-                    WardenXPCError.validationErrorsKey: lines,
+                    GuardianXPCError.validationErrorsKey: lines,
                 ]
             )
         }
@@ -112,14 +112,14 @@ final class ExtensionService: NSObject, WardenExtensionXPC, NSXPCListenerDelegat
         return (try? JSONEncoder.xpc.encode(batch)) ?? Data("[]".utf8)
     }
 
-    func subscribe(client: any WardenClientXPC) async {
+    func subscribe(client: any GuardianClientXPC) async {
         // NSXPCConnection.current() is unavailable in async contexts; real connections go through
         // `ConnectionEndpoint`, which supplies its connection id. Direct callers get a fresh id.
         await subscribe(client: client, connectionKey: nextConnectionID())
     }
 
     /// One client per connection: subscribing again on the same connection replaces the previous client.
-    func subscribe(client: any WardenClientXPC, connectionKey: UInt64) async {
+    func subscribe(client: any GuardianClientXPC, connectionKey: UInt64) async {
         await hub.add(key: connectionKey, client: client)
     }
 
@@ -140,13 +140,13 @@ final class ExtensionService: NSObject, WardenExtensionXPC, NSXPCListenerDelegat
     }
 
     func listener(_: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
-        let exported = NSXPCInterface(with: WardenExtensionXPC.self)
+        let exported = NSXPCInterface(with: GuardianExtensionXPC.self)
         exported.setInterface(
-            NSXPCInterface(with: WardenClientXPC.self), for: #selector(WardenExtensionXPC.subscribe(client:)),
+            NSXPCInterface(with: GuardianClientXPC.self), for: #selector(GuardianExtensionXPC.subscribe(client:)),
             argumentIndex: 0, ofReply: false
         )
         connection.exportedInterface = exported
-        connection.remoteObjectInterface = NSXPCInterface(with: WardenClientXPC.self)
+        connection.remoteObjectInterface = NSXPCInterface(with: GuardianClientXPC.self)
         connection.setCodeSigningRequirement(Self.peerRequirement())
         let key = nextConnectionID()
         connection.exportedObject = ConnectionEndpoint(service: self, key: key)

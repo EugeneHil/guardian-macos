@@ -207,7 +207,7 @@ final class OpenCoordinator: Sendable {
             responsible = await resolver.identity(of: token)
         }
         let decision = engine.evaluate(
-            WDAccessRequest(
+            GDAccessRequest(
                 filePath: request.file, process: Self.info(request.process), responsible: responsible.map(Self.info)
             )
         )
@@ -245,7 +245,7 @@ final class OpenCoordinator: Sendable {
         }
     }
 
-    private static func info(_ identity: ProcessIdentity) -> WDProcessInfo {
-        WDProcessInfo(path: identity.path, signingId: identity.signingId, teamId: identity.teamId)
+    private static func info(_ identity: ProcessIdentity) -> GDProcessInfo {
+        GDProcessInfo(path: identity.path, signingId: identity.signingId, teamId: identity.teamId)
     }
 }
