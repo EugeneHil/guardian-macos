@@ -149,8 +149,8 @@ Working dir: `guardian-server`. Needs core v0.2.0. Python tests: `scripts/` (CI:
 
 ### Task 8: VPS cutover and server release (owner gate)
 
-- [ ] **Step 1:** Owner follows `docs/vps-cutover.md` steps 1–8 with the new binary built locally or from the release build; pastes outputs. Claude reviews outputs, never sees secrets.
-- [ ] **Step 2:** Only after step 8 passes: release PR `develop → main`, owner pushes tag `v0.2.0`, approves the `production` environment, checks the deploy and `/healthz`.
+- [ ] **Step 1:** Release PR `develop → main` (with the version bump) first; nothing deploys yet (only a pushed `v*` tag deploys; a manual run on `main` only builds).
+- [ ] **Step 2:** Owner follows `docs/vps-cutover.md` steps 1–8 with the build from a manual `deploy` dispatch on `main` (build-only); pastes outputs. Claude reviews outputs, never sees secrets. Then the owner pushes tag `v0.2.0`, approves the `production` environment, checks the deploy and `/healthz`. Cleanup (step 10) only after the tag deploy succeeded and one stable day.
 - [ ] **Step 3:** Record the result in `docs/vps-setup.md` (a short "Verified live" note, as in HANDOFF).
 
 ---

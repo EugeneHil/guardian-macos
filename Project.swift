@@ -39,7 +39,7 @@ let project = Project(
                 "LSUIElement": true,
                 // ATS would reject the self-signed server certificate despite the SPKI pin (ADR-0003).
                 "NSAppTransportSecurity": ["NSAllowsArbitraryLoads": true],
-                "NSSystemExtensionUsageDescription": "Warden installs a system extension that enforces DLP policy.",
+                "NSSystemExtensionUsageDescription": "Guardian installs a system extension that enforces DLP policy.",
             ]),
             sources: ["WardenApp/Sources/**", "Shared/**"],
             entitlements: .file(path: "WardenApp/WardenApp.entitlements"),

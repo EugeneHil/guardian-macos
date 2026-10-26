@@ -19,7 +19,7 @@
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>NSSystemExtensionUsageDescription</key>
-    <string>Warden monitors file access to enforce data-loss-prevention policy.</string>
+    <string>Guardian monitors file access to enforce data-loss-prevention policy.</string>
     <key>NSEndpointSecurityEarlyBoot</key>
     <false/>
     <key>NSEndpointSecurityMachServiceName</key>

@@ -42,7 +42,7 @@ Then shut down and take the snapshot **`es-ready`**. Roll back to it whenever th
 
 ## 5. Share the workspace
 
-UTM → VM → **Edit → Sharing** → set the shared directory to `/Users/eugene/Mine/git/warden` (VirtioFS). In the guest it appears in Finder under *Shared Directory*. Build on the host, copy the `.app` into the guest's `/Applications`, run there.
+UTM → VM → **Edit → Sharing** → set the shared directory to `/Users/eugene/Mine/git/guardian` (VirtioFS). In the guest it appears in Finder under *Shared Directory*. Build on the host, copy the `.app` into the guest's `/Applications`, run there.
 
 ## Notes
 
