@@ -1,16 +1,18 @@
-# Warden Core Implementation Plan (Plan 2 of 4)
+# Guardian Core Implementation Plan (Plan 2 of 4)
+
+> Formerly Warden.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build `warden-core`: the cross-platform C++17 policy engine (CoreCpp) with CI on macOS and Windows and quality gates, plus the design-token generator, released as tag `v0.1.0` for `warden-server` and `warden-macos` to pin.
+**Goal:** Build `guardian-core`: the cross-platform C++17 policy engine (CoreCpp) with CI on macOS and Windows and quality gates, plus the design-token generator, released as tag `v0.1.0` for `guardian-server` and `guardian-macos` to pin.
 
-**Architecture:** A static library `warden_core` (alias `warden::core`) with small single-purpose units: path normalization → glob matcher → policy types and `Engine` (evaluate + allocation-free prefilter) → JSON parser/validator. Only `policy_parser.cpp` touches nlohmann/json; no exception crosses the public API. `design-tokens/` is independent: `tokens.json` → stdlib-only `generate.py` → `Tokens.swift` + `tokens.css`.
+**Architecture:** A static library `guardian_core` (alias `guardian::core`) with small single-purpose units: path normalization → glob matcher → policy types and `Engine` (evaluate + allocation-free prefilter) → JSON parser/validator. Only `policy_parser.cpp` touches nlohmann/json; no exception crosses the public API. `design-tokens/` is independent: `tokens.json` → stdlib-only `generate.py` → `Tokens.swift` + `tokens.css`.
 
 **Tech Stack:** C++17, CMake ≥ 3.25 + presets, Ninja, GoogleTest v1.17.0 and nlohmann/json v3.12.0 (FetchContent, pinned tags), clang-format/clang-tidy, llvm-cov, GitHub Actions, Python 3 stdlib (must run on macOS stock Python 3.9).
 
-**Spec:** `docs/superpowers/specs/2026-10-20-warden-design.md` (§4.2 policy & engine, §4.6 design system, §7 quality). Prior art: Plan 1 (`2026-10-20-warden-01-foundation.md`) and ADR-0001 (ES path form unverified).
+**Spec:** `docs/superpowers/specs/2026-10-20-guardian-design.md` (§4.2 policy & engine, §4.6 design system, §7 quality). Prior art: Plan 1 (`2026-10-20-guardian-01-foundation.md`) and ADR-0001 (ES path form unverified).
 
-**Where the work happens:** all code tasks run in `/Users/eugene/Mine/git/warden/warden-core` (Claude Code started there so its guard hook is active). Paths below are relative to that repo unless prefixed `warden-macos/`. Work lands in three PRs to `develop`: A = Tasks 1–3, B = Tasks 4–9, C = Tasks 10–11; Task 12 is the release. **Ask the owner (AskUserQuestion) before every merge, before applying rulesets, and before pushing the tag.** Squash merges only; `gh pr update-branch <n>` when behind. Commit trailer and PR footer as in `HANDOFF.md`.
+**Where the work happens:** all code tasks run in `/Users/eugene/Mine/git/guardian/guardian-core` (Claude Code started there so its guard hook is active). Paths below are relative to that repo unless prefixed `guardian-macos/`. Work lands in three PRs to `develop`: A = Tasks 1–3, B = Tasks 4–9, C = Tasks 10–11; Task 12 is the release. **Ask the owner (AskUserQuestion) before every merge, before applying rulesets, and before pushing the tag.** Squash merges only; `gh pr update-branch <n>` when behind. Commit trailer and PR footer as in `HANDOFF.md`.
 
 ## Global Constraints
 
@@ -25,7 +27,7 @@
 
 ## Public API contract (consumed by Plans 3 and 4)
 
-Namespace `warden`, headers under `include/warden/`. These names are fixed; later plans (CoreBridge, server) depend on them.
+Namespace `guardian`, headers under `include/guardian/`. These names are fixed; later plans (CoreBridge, server) depend on them.
 
 ```cpp
 // policy.hpp
@@ -59,7 +61,7 @@ std::optional<std::string> globError(std::string_view pattern);  // nullopt = va
 std::string_view coreVersion() noexcept;
 ```
 
-Deviation from the spec sketch, decided here: the prefilter is `Engine::isPotentiallyProtected` (it needs the compiled policy), not a free function of the path alone. Library consumers use `add_subdirectory(warden-core)` and link `warden::core`; tests build only when `warden-core` is the top-level project.
+Deviation from the spec sketch, decided here: the prefilter is `Engine::isPotentiallyProtected` (it needs the compiled policy), not a free function of the path alone. Library consumers use `add_subdirectory(guardian-core)` and link `guardian::core`; tests build only when `guardian-core` is the top-level project.
 
 ## Review Focus
 
@@ -77,18 +79,18 @@ Known and documented limitation (test `MatchingIsCaseSensitive` in Task 5): matc
 
 **Files:**
 - Create: `CMakeLists.txt`, `CMakePresets.json`, `cmake/Dependencies.cmake`, `cmake/Warnings.cmake`
-- Create: `include/warden/version.hpp`, `src/version.cpp`, `tests/version_test.cpp`
+- Create: `include/guardian/version.hpp`, `src/version.cpp`, `tests/version_test.cpp`
 - Create: `docs/adr/0001-cpp-dependencies.md`
 - Modify: `.gitignore` (nothing expected — `build/` is already ignored; verify)
 
 **Interfaces:**
-- Produces: targets `warden_core` (static lib, alias `warden::core`, public include dir `include/`, C++17, private `warden_warnings`), `warden_tests` (GoogleTest executable from `tests/*_test.cpp`, `gtest_discover_tests`), CMake option `WARDEN_BUILD_TESTS` (default `${PROJECT_IS_TOP_LEVEL}`), `std::string_view warden::coreVersion() noexcept` returning the CMake `PROJECT_VERSION` (`0.1.0`) via compile definition `WARDEN_CORE_VERSION`.
+- Produces: targets `guardian_core` (static lib, alias `guardian::core`, public include dir `include/`, C++17, private `guardian_warnings`), `guardian_tests` (GoogleTest executable from `tests/*_test.cpp`, `gtest_discover_tests`), CMake option `GUARDIAN_BUILD_TESTS` (default `${PROJECT_IS_TOP_LEVEL}`), `std::string_view guardian::coreVersion() noexcept` returning the CMake `PROJECT_VERSION` (`0.1.0`) via compile definition `GUARDIAN_CORE_VERSION`.
 - Presets (configure+build+test, binary dir `build/<name>`, Ninja): `macos`, `windows` (condition: host Windows; MSVC `cl`), `linux` (unofficial), `coverage` (macOS; clang `-fprofile-instr-generate -fcoverage-mapping`, Debug). Tests are added to `tests/` by file name pattern `*_test.cpp` through `file(GLOB … CONFIGURE_DEPENDS)`.
 
 - [ ] **Step 1: Branch** — `git switch develop && git pull --ff-only && git switch -c feature/WRD-6-core-scaffold`.
-- [ ] **Step 2: Write the failing test** `tests/version_test.cpp`: `TEST(Version, IsSemver)` asserts `std::regex_match(std::string(warden::coreVersion()), std::regex(R"(\d+\.\d+\.\d+)"))` and `EXPECT_EQ(warden::coreVersion(), "0.1.0")`. Also write `CMakeLists.txt` referencing sources that do not exist yet only for the test target.
-- [ ] **Step 3: Run to verify it fails** — `cmake --preset macos && cmake --build --preset macos` → Expected: FAIL (`warden/version.hpp` not found / undefined `coreVersion`). Write `cmake/Dependencies.cmake` (FetchContent for both pins, `GIT_SHALLOW TRUE`, `SYSTEM`, `JSON_BuildTests OFF`, `INSTALL_GTEST OFF`, `gtest_force_shared_crt ON`) and `cmake/Warnings.cmake` (interface target `warden_warnings` with the Global Constraints flags) first, so the failure is the missing header, not the build setup.
-- [ ] **Step 4: Implement** `include/warden/version.hpp`, `src/version.cpp`, the `warden_core` target and presets as specified above. `cmake_minimum_required(VERSION 3.25)`, `project(warden_core VERSION 0.1.0 LANGUAGES CXX)`, `CMAKE_CXX_EXTENSIONS OFF`.
+- [ ] **Step 2: Write the failing test** `tests/version_test.cpp`: `TEST(Version, IsSemver)` asserts `std::regex_match(std::string(guardian::coreVersion()), std::regex(R"(\d+\.\d+\.\d+)"))` and `EXPECT_EQ(guardian::coreVersion(), "0.1.0")`. Also write `CMakeLists.txt` referencing sources that do not exist yet only for the test target.
+- [ ] **Step 3: Run to verify it fails** — `cmake --preset macos && cmake --build --preset macos` → Expected: FAIL (`guardian/version.hpp` not found / undefined `coreVersion`). Write `cmake/Dependencies.cmake` (FetchContent for both pins, `GIT_SHALLOW TRUE`, `SYSTEM`, `JSON_BuildTests OFF`, `INSTALL_GTEST OFF`, `gtest_force_shared_crt ON`) and `cmake/Warnings.cmake` (interface target `guardian_warnings` with the Global Constraints flags) first, so the failure is the missing header, not the build setup.
+- [ ] **Step 4: Implement** `include/guardian/version.hpp`, `src/version.cpp`, the `guardian_core` target and presets as specified above. `cmake_minimum_required(VERSION 3.25)`, `project(guardian_core VERSION 0.1.0 LANGUAGES CXX)`, `CMAKE_CXX_EXTENSIONS OFF`.
 - [ ] **Step 5: Run to verify it passes** — `cmake --build --preset macos && ctest --preset macos --output-on-failure` → Expected: `100% tests passed, 0 tests failed out of 1`.
 - [ ] **Step 6: Write `docs/adr/0001-cpp-dependencies.md`** (Status/Context/Decision/Consequences, English, ≤ 40 lines): why nlohmann/json (header-only, no exceptions needed at our boundary, pinned `v3.12.0`) and GoogleTest `v1.17.0` (test-only), FetchContent pinning policy, bump procedure. Before writing, confirm both tags exist: `git ls-remote --tags https://github.com/nlohmann/json v3.12.0` and `… google/googletest v1.17.0`.
 - [ ] **Step 7: Commit** — `git add -A && git commit -m "build: add CMake scaffold, pinned dependencies and ADR-0001"`.
@@ -99,8 +101,8 @@ Known and documented limitation (test `MatchingIsCaseSensitive` in Task 5): matc
 - Create: `.clang-format`, `.clang-tidy`, `scripts/lint.sh`, `scripts/coverage.sh`, `scripts/coverage_gate.py`, `scripts/test_coverage_gate.py`
 
 **Interfaces:**
-- Consumes: `warden_core` target and presets from Task 1 (compile database via `CMAKE_EXPORT_COMPILE_COMMANDS ON` in the `macos` preset).
-- Produces: `scripts/lint.sh` — runs `clang-format --dry-run -Werror` on `include src tests` and `run-clang-tidy -p build/macos` on `src` only (tests excluded), tools from `$(brew --prefix llvm)/bin` when not on PATH; exit non-zero on any finding. `scripts/coverage.sh` — configures/builds/tests with preset `coverage`, merges profiles with `xcrun llvm-profdata`, exports `xcrun llvm-cov export -summary-only` for `warden_tests` ignoring `_deps` and `tests/`, then calls the gate. `python3 -I -B scripts/coverage_gate.py <summary.json> --min <percent>` — reads `data[0].totals.lines.percent`, prints it, exit 1 when below `--min`. `.clang-format`: `BasedOnStyle: Google`, `ColumnLimit: 100`. `.clang-tidy`: `bugprone-*,performance-*,modernize-*,readability-*` minus `modernize-use-trailing-return-type,readability-magic-numbers,readability-identifier-length`, `WarningsAsErrors: '*'`, `HeaderFilterRegex: '(include|src)/'`.
+- Consumes: `guardian_core` target and presets from Task 1 (compile database via `CMAKE_EXPORT_COMPILE_COMMANDS ON` in the `macos` preset).
+- Produces: `scripts/lint.sh` — runs `clang-format --dry-run -Werror` on `include src tests` and `run-clang-tidy -p build/macos` on `src` only (tests excluded), tools from `$(brew --prefix llvm)/bin` when not on PATH; exit non-zero on any finding. `scripts/coverage.sh` — configures/builds/tests with preset `coverage`, merges profiles with `xcrun llvm-profdata`, exports `xcrun llvm-cov export -summary-only` for `guardian_tests` ignoring `_deps` and `tests/`, then calls the gate. `python3 -I -B scripts/coverage_gate.py <summary.json> --min <percent>` — reads `data[0].totals.lines.percent`, prints it, exit 1 when below `--min`. `.clang-format`: `BasedOnStyle: Google`, `ColumnLimit: 100`. `.clang-tidy`: `bugprone-*,performance-*,modernize-*,readability-*` minus `modernize-use-trailing-return-type,readability-magic-numbers,readability-identifier-length`, `WarningsAsErrors: '*'`, `HeaderFilterRegex: '(include|src)/'`.
 
 - [ ] **Step 1: Write failing gate tests** `scripts/test_coverage_gate.py` (unittest): `test_passes_at_or_above_min` (summary with 90.0, `--min 90` → 0), `test_fails_below_min` (89.99 → 1), `test_rejects_malformed_summary` (`{}` → exit 2, message on stderr). Run `python3 -I -B -m unittest discover -s scripts` → Expected: FAIL (module missing).
 - [ ] **Step 2: Implement `scripts/coverage_gate.py`** (`main(argv: list[str]) -> int`, Python 3.9-compatible syntax) → tests PASS.
@@ -124,15 +126,15 @@ Known and documented limitation (test `MatchingIsCaseSensitive` in Task 5): matc
 - [ ] **Step 3: Write `ci.yml`** as specified. Pin actions to major tags like the existing `gitleaks.yml` (`actions/checkout@v4`).
 - [ ] **Step 4: Open PR A** — push the branch, `gh pr create --base develop --title "build: CMake scaffold, quality gates and CI"`, body ends with the footer. Wait for `cpp-macos`, `cpp-windows`, `gitleaks` green: `gh pr checks <n> --watch`. Fix Windows/MSVC warnings here, not later. Expected: all green.
 - [ ] **Step 5: Merge (ask the owner first)**, then `git switch develop && git pull --ff-only`.
-- [ ] **Step 6: Apply required checks (ask the owner first)** — from the repo root: `tooling/github/bootstrap-repo.sh warden-core "$(gh repo view --json description -q .description)" cpp-macos cpp-windows`. Verify: `gh api repos/EugeneHil/warden-core/rulesets/<id> --jq '.rules[].parameters.required_status_checks'` lists `gitleaks`, `cpp-macos`, `cpp-windows` in both rulesets.
+- [ ] **Step 6: Apply required checks (ask the owner first)** — from the repo root: `tooling/github/bootstrap-repo.sh guardian-core "$(gh repo view --json description -q .description)" cpp-macos cpp-windows`. Verify: `gh api repos/EugeneHil/guardian-core/rulesets/<id> --jq '.rules[].parameters.required_status_checks'` lists `gitleaks`, `cpp-macos`, `cpp-windows` in both rulesets.
 
 ### Task 4: Path normalization
 
 **Files:**
-- Create: `include/warden/path.hpp`, `src/path.cpp`, `tests/path_test.cpp`
+- Create: `include/guardian/path.hpp`, `src/path.cpp`, `tests/path_test.cpp`
 
 **Interfaces:**
-- Produces: `std::string warden::normalizePath(std::string_view path)` — lexical only: collapse `//`, drop `.` segments, resolve `..` (never above root: `/..` → `/`), drop trailing `/` (except root), then rewrite a leading `/tmp`, `/var`, `/etc` segment to `/private/tmp|var|etc` (segment boundary only); relative paths are cleaned but not rooted; `""` → `""`. `bool warden::isCanonicalPath(std::string_view) noexcept` — true iff the path is absolute, has no empty/`.`/`..` segments, no trailing `/` (except root) and does not start with an alias prefix; allocation-free. `std::string warden::expandTarget(std::string_view target)` — `~` → `/Users/*`, `~/rest` → `/Users/*/rest`, everything else unchanged.
+- Produces: `std::string guardian::normalizePath(std::string_view path)` — lexical only: collapse `//`, drop `.` segments, resolve `..` (never above root: `/..` → `/`), drop trailing `/` (except root), then rewrite a leading `/tmp`, `/var`, `/etc` segment to `/private/tmp|var|etc` (segment boundary only); relative paths are cleaned but not rooted; `""` → `""`. `bool guardian::isCanonicalPath(std::string_view) noexcept` — true iff the path is absolute, has no empty/`.`/`..` segments, no trailing `/` (except root) and does not start with an alias prefix; allocation-free. `std::string guardian::expandTarget(std::string_view target)` — `~` → `/Users/*`, `~/rest` → `/Users/*/rest`, everything else unchanged.
 - Branch: `git switch -c feature/WRD-7-core-engine` from updated `develop` (PR B covers Tasks 4–9).
 
 - [ ] **Step 1: Write the failing tests** `tests/path_test.cpp` — table-driven `TEST(NormalizePath, …)`: `/Users/a//proj/./x` → `/Users/a/proj/x`; `/Users/a/proj/../.ssh/id_rsa` → `/Users/a/.ssh/id_rsa`; `/../../etc/hosts` → `/private/etc/hosts`; `/tmp` → `/private/tmp`; `/tmp/x/` → `/private/tmp/x`; `/var/folders/a` → `/private/var/folders/a`; `/tmpfoo` and `/private/tmp/x` and `/variable` unchanged; `/` → `/`; `` → ``; `a/../b` → `b`. `TEST(IsCanonicalPath, …)`: true for `/Users/a/.env`, `/`; false for `` , `a/b`, `/a//b`, `/a/./b`, `/a/../b`, `/a/`, `/tmp/x`, `/var`, `/etc/hosts`; true for `/tmpfoo`. `TEST(ExpandTarget, …)`: `~` → `/Users/*`; `~/.ssh/**` → `/Users/*/.ssh/**`; `**/.env` and `/etc/x` unchanged; `~bob/x` unchanged (rejected later by the validator).
@@ -144,11 +146,11 @@ Known and documented limitation (test `MatchingIsCaseSensitive` in Task 5): matc
 ### Task 5: Glob matcher
 
 **Files:**
-- Create: `include/warden/glob.hpp`, `src/glob.cpp`, `tests/glob_test.cpp`
+- Create: `include/guardian/glob.hpp`, `src/glob.cpp`, `tests/glob_test.cpp`
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `bool warden::globMatch(std::string_view pattern, std::string_view path) noexcept` — allocation-free, iterative (no recursion). Both strings are split on `/`; a leading `/` in the pattern requires a leading `/` in the path and is otherwise consumed as the root marker; a pattern not starting with `/` (i.e. `**/…`) matches at any depth. A segment `**` matches zero or more whole segments (so `/a/**` also matches `/a`); `*` inside a segment matches any run of characters excluding `/`, including dots and the empty run; every other character is literal and matching is case-sensitive. `std::optional<std::string> warden::globError(std::string_view target)` — returns a message for an invalid *target glob* (after `~` handling it must be absolute: start with `/`, `~`/`~/`, or `**`): `"empty target"`, `"target must start with '/', '~' or '**'"`, `"'~' must be followed by '/' or end"`, `"empty path segment"`, `"'.' and '..' segments are not allowed"`, `"'**' must be a whole segment"`, `"trailing '/'"`; `nullopt` when valid.
+- Produces: `bool guardian::globMatch(std::string_view pattern, std::string_view path) noexcept` — allocation-free, iterative (no recursion). Both strings are split on `/`; a leading `/` in the pattern requires a leading `/` in the path and is otherwise consumed as the root marker; a pattern not starting with `/` (i.e. `**/…`) matches at any depth. A segment `**` matches zero or more whole segments (so `/a/**` also matches `/a`); `*` inside a segment matches any run of characters excluding `/`, including dots and the empty run; every other character is literal and matching is case-sensitive. `std::optional<std::string> guardian::globError(std::string_view target)` — returns a message for an invalid *target glob* (after `~` handling it must be absolute: start with `/`, `~`/`~/`, or `**`): `"empty target"`, `"target must start with '/', '~' or '**'"`, `"'~' must be followed by '/' or end"`, `"empty path segment"`, `"'.' and '..' segments are not allowed"`, `"'**' must be a whole segment"`, `"trailing '/'"`; `nullopt` when valid.
 
 - [ ] **Step 1: Write the failing tests** `tests/glob_test.cpp` (`TEST(Glob, …)`):
   - `StarStaysInsideSegment`: `/a/*.txt` matches `/a/x.txt`, `/a/.txt`; not `/a/b/x.txt`, not `/a/x.txtt`.
@@ -167,13 +169,13 @@ Known and documented limitation (test `MatchingIsCaseSensitive` in Task 5): matc
 ### Task 6: Policy types, process matcher and Engine
 
 **Files:**
-- Create: `include/warden/policy.hpp`, `include/warden/engine.hpp`, `src/engine.cpp`, `tests/test_support.hpp`, `tests/engine_test.cpp`, `tests/alloc_test.cpp`
-- Modify: `CMakeLists.txt` (add `warden_alloc_tests`: a plain executable from `tests/alloc_test.cpp`, no GoogleTest, registered with `add_test`)
+- Create: `include/guardian/policy.hpp`, `include/guardian/engine.hpp`, `src/engine.cpp`, `tests/test_support.hpp`, `tests/engine_test.cpp`, `tests/alloc_test.cpp`
+- Modify: `CMakeLists.txt` (add `guardian_alloc_tests`: a plain executable from `tests/alloc_test.cpp`, no GoogleTest, registered with `add_test`)
 
 **Interfaces:**
 - Consumes: `normalizePath`, `isCanonicalPath`, `expandTarget` (Task 4); `globMatch` (Task 5).
-- Produces: all types from `policy.hpp` and `engine.hpp` listed in *Public API contract* (except parser types), plus `bool warden::matchesProcess(const ProcessMatcher&, const ProcessInfo&) noexcept` (declared in `engine.hpp`): true iff the matcher has at least one field, every present field is non-empty and matches (`teamId`/`signingId`/`path` exact, `signingIdPrefix` is a prefix), where an empty `ProcessInfo` value never matches a present field. `Engine` precomputes per-rule patterns `normalizePath(expandTarget(target))`. `evaluate`: normalize `filePath`; first rule (in order) with a matching target **and** a matcher that matches `process` or `responsible` wins → `{Deny, rule.id}`; otherwise `{Allow, ""}`. `isPotentiallyProtected(path)`: `true` if `!isCanonicalPath(path)` (conservative, so aliases and `..` are always candidates), else `true` iff some pattern of any rule `globMatch`es the path. The Engine is immutable after construction (safe to share across threads).
-- `tests/test_support.hpp` (header-only, reused by later tasks): `warden::Policy makeSpecPolicy()` — one rule `secrets-from-browsers-and-ai`, targets `**/.env`, `**/.env.*`, `~/.ssh/**`, action deny, processes: `teamId EQHXZ8M8AV`, `signingIdPrefix` `com.google.Chrome`, `com.apple.Safari`, `com.openai.chat`, `com.anthropic.claude`, `path /usr/bin/python3`; `warden::AccessRequest makeRequest(std::string file, warden::ProcessInfo process, std::optional<warden::ProcessInfo> responsible = std::nullopt)`.
+- Produces: all types from `policy.hpp` and `engine.hpp` listed in *Public API contract* (except parser types), plus `bool guardian::matchesProcess(const ProcessMatcher&, const ProcessInfo&) noexcept` (declared in `engine.hpp`): true iff the matcher has at least one field, every present field is non-empty and matches (`teamId`/`signingId`/`path` exact, `signingIdPrefix` is a prefix), where an empty `ProcessInfo` value never matches a present field. `Engine` precomputes per-rule patterns `normalizePath(expandTarget(target))`. `evaluate`: normalize `filePath`; first rule (in order) with a matching target **and** a matcher that matches `process` or `responsible` wins → `{Deny, rule.id}`; otherwise `{Allow, ""}`. `isPotentiallyProtected(path)`: `true` if `!isCanonicalPath(path)` (conservative, so aliases and `..` are always candidates), else `true` iff some pattern of any rule `globMatch`es the path. The Engine is immutable after construction (safe to share across threads).
+- `tests/test_support.hpp` (header-only, reused by later tasks): `guardian::Policy makeSpecPolicy()` — one rule `secrets-from-browsers-and-ai`, targets `**/.env`, `**/.env.*`, `~/.ssh/**`, action deny, processes: `teamId EQHXZ8M8AV`, `signingIdPrefix` `com.google.Chrome`, `com.apple.Safari`, `com.openai.chat`, `com.anthropic.claude`, `path /usr/bin/python3`; `guardian::AccessRequest makeRequest(std::string file, guardian::ProcessInfo process, std::optional<guardian::ProcessInfo> responsible = std::nullopt)`.
 
 - [ ] **Step 1: Write the failing tests** `tests/engine_test.cpp` (all against `makeSpecPolicy()` unless noted):
   - `DeniesChromeOpeningEnv`: `/Users/bob/proj/api/.env`, process `{path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", signingId: "com.google.Chrome", teamId: "EQHXZ8M8AV"}` → `Deny`, `ruleId == "secrets-from-browsers-and-ai"`.
@@ -198,11 +200,11 @@ Known and documented limitation (test `MatchingIsCaseSensitive` in Task 5): matc
 ### Task 7: Policy parser — structure and types
 
 **Files:**
-- Create: `include/warden/policy_parser.hpp`, `src/policy_parser.cpp`, `tests/policy_parser_test.cpp`
+- Create: `include/guardian/policy_parser.hpp`, `src/policy_parser.cpp`, `tests/policy_parser_test.cpp`
 
 **Interfaces:**
-- Consumes: `Policy` types and `ParseResult`/`ValidationError` as in the contract (define `ParseResult`, `ValidationError`, `describe` in `policy_parser.hpp`/`policy.hpp` exactly as listed), nlohmann/json (private to `policy_parser.cpp`; `warden_core` links it `PRIVATE`).
-- Produces: `ParseResult warden::parsePolicy(std::string_view json)` and `std::string warden::describe(const ValidationError&)`. Error path format: `$` for the document root, otherwise `schemaVersion`, `rules[0].id`, `rules[0].processes[2]`, `rules[1].processes[0].teamId`. The parser reports **all** errors it finds (does not stop at the first), never throws (catch `nlohmann::json::exception` and map to `{"$", "invalid JSON: <detail>"}`), and returns `policy` only when `errors` is empty. Unknown keys are errors with message `unknown field '<name>'` at every object level (root, rule, matcher). Type errors use messages `expected object|array|string|integer`. `description` is optional (default empty); every other field of §4.2 is required.
+- Consumes: `Policy` types and `ParseResult`/`ValidationError` as in the contract (define `ParseResult`, `ValidationError`, `describe` in `policy_parser.hpp`/`policy.hpp` exactly as listed), nlohmann/json (private to `policy_parser.cpp`; `guardian_core` links it `PRIVATE`).
+- Produces: `ParseResult guardian::parsePolicy(std::string_view json)` and `std::string guardian::describe(const ValidationError&)`. Error path format: `$` for the document root, otherwise `schemaVersion`, `rules[0].id`, `rules[0].processes[2]`, `rules[1].processes[0].teamId`. The parser reports **all** errors it finds (does not stop at the first), never throws (catch `nlohmann::json::exception` and map to `{"$", "invalid JSON: <detail>"}`), and returns `policy` only when `errors` is empty. Unknown keys are errors with message `unknown field '<name>'` at every object level (root, rule, matcher). Type errors use messages `expected object|array|string|integer`. `description` is optional (default empty); every other field of §4.2 is required.
 
 - [ ] **Step 1: Write the failing tests** `tests/policy_parser_test.cpp`:
   - `ParsesSpecExample`: the full JSON from design §4.2 → `ok()`, `schemaVersion == 1`, `version == 3`, one rule `secrets-from-browsers-and-ai`, 3 targets, 6 matchers, `processes[0].teamId == "EQHXZ8M8AV"`, `processes[5].path == "/usr/bin/python3"`, and `Engine(*policy)` denies Chrome on `/Users/bob/.env` (end-to-end with Task 6).
@@ -243,7 +245,7 @@ Known and documented limitation (test `MatchingIsCaseSensitive` in Task 5): matc
 
 **Interfaces:**
 - Consumes: everything from Tasks 4–8 (`parsePolicy`, `Engine`, `makeSpecPolicy`).
-- Produces: README sections: purpose, repository layout, Build/Test/Lint/Coverage commands (presets, scripts), Public API summary (copy of the contract's behaviour in prose), policy semantics, a Mermaid architecture diagram (`policy JSON → parsePolicy → Policy → Engine ← AccessRequest`, with `warden-server` and `CoreBridge` as consumers), Roadmap (case-insensitive matching, `/var/root` home, content-based rules, Linux in CI, richer matchers).
+- Produces: README sections: purpose, repository layout, Build/Test/Lint/Coverage commands (presets, scripts), Public API summary (copy of the contract's behaviour in prose), policy semantics, a Mermaid architecture diagram (`policy JSON → parsePolicy → Policy → Engine ← AccessRequest`, with `guardian-server` and `CoreBridge` as consumers), Roadmap (case-insensitive matching, `/var/root` home, content-based rules, Linux in CI, richer matchers).
 
 - [ ] **Step 1: Write the failing tests** `tests/robustness_test.cpp`:
   - `DeepNestingDoesNotCrash`: `std::string(100000, '[')` and `{"rules":` repeated 50 000 times → `!ok()`, at least one error, no crash.
@@ -278,7 +280,7 @@ Known and documented limitation (test `MatchingIsCaseSensitive` in Task 5): matc
 - Create: `design-tokens/generated/Tokens.swift`
 
 **Interfaces:**
-- Produces: `render_swift(tokens: dict) -> str`. Output (Swift 6-clean, no GCD/Combine): header `// Generated by design-tokens/generate.py from tokens.json — do not edit.`, `import SwiftUI`, `import AppKit`, `enum Tokens` with nested `enum Palette` (`static let background = Color(light: 0xFFFFFF, dark: 0x1C1C1E)` per color), `enum Typography` (`static let body = Font.system(size: 13, weight: .regular)`; weights map 400→`.regular`, 600→`.semibold`, others → nearest of `.regular .medium .semibold .bold`; plus `static let monoDesign` omitted — `mono` uses `design: .monospaced`), `enum Spacing` and `enum Radius` (`static let md: CGFloat = 12`), and a file-private `extension Color { init(light: UInt32, dark: UInt32) }` built on `NSColor(name: nil) { appearance in … }` choosing by `appearance.bestMatch(from: [.darkAqua, .aqua])`. `--swift` and `--css` write to arbitrary paths so consumers (`warden-macos`, `warden-server`) regenerate into their trees; consumers' CI re-runs `generate.py --check` against their committed copies (documented in README, wired in Plans 3–4).
+- Produces: `render_swift(tokens: dict) -> str`. Output (Swift 6-clean, no GCD/Combine): header `// Generated by design-tokens/generate.py from tokens.json — do not edit.`, `import SwiftUI`, `import AppKit`, `enum Tokens` with nested `enum Palette` (`static let background = Color(light: 0xFFFFFF, dark: 0x1C1C1E)` per color), `enum Typography` (`static let body = Font.system(size: 13, weight: .regular)`; weights map 400→`.regular`, 600→`.semibold`, others → nearest of `.regular .medium .semibold .bold`; plus `static let monoDesign` omitted — `mono` uses `design: .monospaced`), `enum Spacing` and `enum Radius` (`static let md: CGFloat = 12`), and a file-private `extension Color { init(light: UInt32, dark: UInt32) }` built on `NSColor(name: nil) { appearance in … }` choosing by `appearance.bestMatch(from: [.darkAqua, .aqua])`. `--swift` and `--css` write to arbitrary paths so consumers (`guardian-macos`, `guardian-server`) regenerate into their trees; consumers' CI re-runs `generate.py --check` against their committed copies (documented in README, wired in Plans 3–4).
 - CI job `tokens` (ubuntu-latest, `actions/setup-python@v5` with `python-version: '3.9'`): `python3 -I -B -m unittest discover -s design-tokens/tests` and `python3 -I -B design-tokens/generate.py --check`. Add `tokens` to the required checks afterwards.
 
 - [ ] **Step 1: Write the failing tests**: `test_swift_declares_each_color_with_light_and_dark_hex` (asserts the exact line `static let textSecondary = Color(light: 0x6E6E73, dark: 0x98989D)`), `test_swift_spacing_and_radius_are_cgfloat`, `test_swift_weights_map_to_font_weights` (600 → `.semibold`), `test_swift_is_deterministic`, `test_check_passes_when_files_are_current` and `test_check_fails_when_a_file_is_stale` (run `main` against a temp dir). Run → Expected: FAIL.
@@ -286,16 +288,16 @@ Known and documented limitation (test `MatchingIsCaseSensitive` in Task 5): matc
 - [ ] **Step 3: Verify** — `python3 -I -B -m unittest discover -s design-tokens/tests` PASS; `python3 -I -B design-tokens/generate.py --check` exits 0. Compile-check the generated Swift: `swiftc -typecheck -swift-version 6 design-tokens/generated/Tokens.swift` → Expected: no errors, no warnings.
 - [ ] **Step 4: Add the `tokens` CI job**, README section "Design tokens" (usage, how consumers regenerate and check), commit in two commits: `feat: generate Swift design tokens and freshness check`, `ci: add design tokens job`.
 - [ ] **Step 5: Open PR C** (`feature/WRD-8-design-tokens`, title `feat: design tokens generator`); wait for all four checks (`cpp-macos`, `cpp-windows`, `tokens`, `gitleaks`). **Ask the owner, then squash-merge**; update local `develop`.
-- [ ] **Step 6: Require the new check (ask the owner first)** — `tooling/github/bootstrap-repo.sh warden-core "$(gh repo view --json description -q .description)" cpp-macos cpp-windows tokens`; verify the three checks plus `gitleaks` appear in both rulesets.
+- [ ] **Step 6: Require the new check (ask the owner first)** — `tooling/github/bootstrap-repo.sh guardian-core "$(gh repo view --json description -q .description)" cpp-macos cpp-windows tokens`; verify the three checks plus `gitleaks` appear in both rulesets.
 
 ### Task 12: Release `v0.1.0`
 
 **Files:** none (release mechanics only).
 
 **Interfaces:**
-- Produces: git tag `v0.1.0` on `main` of `warden-core`, which Plans 3 and 4 pin as a submodule.
+- Produces: git tag `v0.1.0` on `main` of `guardian-core`, which Plans 3 and 4 pin as a submodule.
 
 - [ ] **Step 1: Final verification on `develop`** — `ctest --preset macos`, `scripts/coverage.sh`, `scripts/lint.sh`, `python3 -I -B -m unittest discover -s design-tokens/tests`, `python3 -I -B -m unittest discover -s tooling/claude`, all green; coverage ≥ 90 %. The `linux` preset cannot be verified locally (no Docker); record it in the README as "unverified until a Linux session builds it".
 - [ ] **Step 2: Release PR (ask the owner first)** — `gh pr create --base main --head develop --title "chore: release v0.1.0"` (body: API contract summary and known limitations from Review Focus); wait for green checks; merge with a merge commit as the `protected-main` ruleset allows.
-- [ ] **Step 3: Tag (ask the owner first — this publishes)** — `git switch main && git pull --ff-only && git tag -a v0.1.0 -m "warden-core v0.1.0" && git push origin v0.1.0`. Verify: `git ls-remote --tags origin v0.1.0` shows the tag.
-- [ ] **Step 4: Hand off** — report to the owner: Plans 3 (`warden-server`) and 4 (`warden-macos`) can start; both add `warden-core` as a submodule pinned to `v0.1.0`, link `warden::core`, and copy tokens via `generate.py --css/--swift`.
+- [ ] **Step 3: Tag (ask the owner first — this publishes)** — `git switch main && git pull --ff-only && git tag -a v0.1.0 -m "guardian-core v0.1.0" && git push origin v0.1.0`. Verify: `git ls-remote --tags origin v0.1.0` shows the tag.
+- [ ] **Step 4: Hand off** — report to the owner: Plans 3 (`guardian-server`) and 4 (`guardian-macos`) can start; both add `guardian-core` as a submodule pinned to `v0.1.0`, link `guardian::core`, and copy tokens via `generate.py --css/--swift`.

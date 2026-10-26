@@ -1,4 +1,6 @@
-# Warden — Lightweight Endpoint DLP for macOS — Design
+# Guardian — Lightweight Endpoint DLP for macOS — Design
+
+> Formerly Warden.
 
 Date: 2026‑10‑20 · Status: approved
 
@@ -8,7 +10,7 @@ Decision tags: **[owner]** — product owner's decision; **[proposed]** — assi
 
 ## 1. What and why
 
-**Warden** is an Endpoint DLP (Data Loss Prevention) product. It protects developers' sensitive files on macOS (`.env` files, SSH keys) from being read by browsers and AI tools — the channel through which secrets most often leak, e.g. by dragging a file into a chat.
+**Guardian** is an Endpoint DLP (Data Loss Prevention) product. It protects developers' sensitive files on macOS (`.env` files, SSH keys) from being read by browsers and AI tools — the channel through which secrets most often leak, e.g. by dragging a file into a chat.
 
 Policies are managed centrally on a server and enforced on endpoints. The Mac agent is built on native macOS system facilities (Endpoint Security, System Extensions, XPC); access decisions are made by a cross‑platform C++17 rule engine shared by the agent and the server.
 
@@ -45,14 +47,14 @@ First release (v0.1): a lightweight product with production‑grade architecture
   - Consequence: no Team ID, so the XPC code‑signing requirement can only pin the bundle identifier (+ ad‑hoc cdhash where practical). This is a documented v0.1 limitation; with a paid certificate it becomes `anchor apple generic and certificate leaf[subject.OU] = <TEAMID>`.
 - **Server runs on a Windows VPS [owner].** No domain → self‑signed certificate; the agent validates it via SPKI pinning **[proposed]**. The VPS is not prepared yet; setting it up is a plan task (§8) **[owner]**.
 - **AI tooling budget:** Claude subscription + $100 of cloud session credits valid until Nov 5; no budget beyond that **[owner]**.
-- **Platforms:** macOS (agent) and Windows (server) are supported. CoreCpp and WardenServer must also build and pass tests on Linux **as an unofficial dev build only**, so cloud sessions (Linux) can work on them; Linux is not in CI and not supported **[owner]**.
+- **Platforms:** macOS (agent) and Windows (server) are supported. CoreCpp and GuardianServer must also build and pass tests on Linux **as an unofficial dev build only**, so cloud sessions (Linux) can work on them; Linux is not in CI and not supported **[owner]**.
 - **GitHub, public repositories [owner].**
 
 ## 4. Architecture
 
 ```
 ┌──────────────────────── Mac (VM for ES debugging) ───────────────────────┐
-│ WardenApp (SwiftUI, menu bar, MVVM)                                      │
+│ GuardianApp (SwiftUI, menu bar, MVVM)                                      │
 │   ├─ DesignSystem/ (folder, generated tokens)                            │
 │   ├─ PolicySync: HTTPS + SPKI pinning ──────────────┐                    │
 │   ├─ EventUploader ─────────────────────────────────┤                    │
@@ -66,7 +68,7 @@ First release (v0.1): a lightweight product with production‑grade architecture
 └─────────────────────────────────────────────────────┼────────────────────┘
                                                       │ HTTPS :8443
 ┌──────────────── Windows VPS ────────────────────────▼────────────────────┐
-│ WardenServer (C++17, CMake) ──► CoreCpp (same code)                      │
+│ GuardianServer (C++17, CMake) ──► CoreCpp (same code)                      │
 │   ├─ /api/v1/policy, /api/v1/events (agent, per‑agent token)             │
 │   ├─ /api/v1/admin/* (panel, Basic Auth over HTTPS)                      │
 │   └─ web panel: static HTML/CSS/JS, tokens.css                           │
@@ -76,7 +78,7 @@ First release (v0.1): a lightweight product with production‑grade architecture
 ### 4.1 Components (Tuist) [owner]
 Four main components. No fine‑grained feature modules and no DI container in v0.1; DI is done via protocols and initializer injection — enough for testability.
 
-1. **WardenApp** — menu bar app (`MenuBarExtra`), SwiftUI, MVVM. Activates/deactivates the system extension (`OSSystemExtensionRequest`); pulls the policy from the server every **10 s** plus a "Sync now" action **[proposed]**, using `ETag`/`If-None-Match`, and pushes it to the extension over XPC; drains events from the extension and uploads them; posts block notifications (`UserNotifications`). Contains the `DesignSystem/` folder **[proposed]**.
+1. **GuardianApp** — menu bar app (`MenuBarExtra`), SwiftUI, MVVM. Activates/deactivates the system extension (`OSSystemExtensionRequest`); pulls the policy from the server every **10 s** plus a "Sync now" action **[proposed]**, using `ETag`/`If-None-Match`, and pushes it to the extension over XPC; drains events from the extension and uploads them; posts block notifications (`UserNotifications`). Contains the `DesignSystem/` folder **[proposed]**.
    **The app (not the extension) fetches the policy [proposed]:** networking and UI are easier to test, and enforcement does not depend on the app because the extension keeps a cache.
 2. **CoreBridge** — isolated Objective‑C++ framework; the only place where Swift meets C++. Exposes only Objective‑C/Swift types (`WDPolicy`, `WDAccessRequest`, `WDDecision`).
 3. **DlpExtension** — Endpoint Security system extension (runs as root, launched by sysextd).
@@ -121,21 +123,21 @@ The extension's testable logic (ES event → `AccessRequest` mapping, queue, pol
 - **Fast path:** if the path cannot match any rule (`isPotentiallyProtected`), respond immediately with all flags and `cache=true`. The ES cache is per (process, file), so event volume stays high system‑wide; the fast path must therefore be allocation‑free and O(path length). Full evaluation runs only for candidates. On policy change, call `es_clear_cache`.
 - **Deadlines:** a missed deadline makes ES kill the client (it does not "allow"). Hence: nothing on the event path may block (see the Swift Concurrency exception in §7); the response is sent synchronously in the handler for fast‑path events; for candidates a watchdog responds `allow` well before the deadline (e.g. at 50 % of `deadline`). Where the OS supports it (macOS 27+), the client also sets `es_set_deadline_miss_mode(ES_DEADLINE_MISS_MODE_FAIL_OPEN)`, so a missed deadline allows the open instead of killing the client.
 - **Fail‑open:** extension crash / `kill -9` → kernel allows access, sysextd restarts the extension; at startup the policy cache is loaded asynchronously and until it is loaded every event gets `allow`; invalid cache → `allow` everything and report the error.
-- Policy cache at `/Library/Application Support/Warden/policy.json` (root, 0600), written atomically.
+- Policy cache at `/Library/Application Support/Guardian/policy.json` (root, 0600), written atomically.
 - Events: in‑memory ring buffer of 1000 entries [proposed] with deduplication of identical (process, file) pairs within 5 s.
 - XPC: Mach service declared in `NSEndpointSecurityMachServiceName`; incoming connections checked via `setCodeSigningRequirement` (bundle identifier in v0.1, see §3). Protocol: `apply(policyData)`, `currentPolicyVersion()`, `drainEvents(max)`, `subscribe(events)` for notifications.
-- Logging via `Logger` (subsystem `…warden`), paths marked `privacy: .private`.
+- Logging via `Logger` (subsystem `…guardian`), paths marked `privacy: .private`.
 
-### 4.4 WardenApp — UI
+### 4.4 GuardianApp — UI
 - Menu bar popover **following mockup A "Native Calm" [owner]**: status header "Protection active" with ON/OFF badge; "Policy vN · synced X s ago" line + "Sync now"; recent events (dot, "process → file", path·time, "Blocked"/"OK" badge); footer "All events…" / "Settings".
 - "All events" window with a list and a "blocked only" filter [builder].
 - Settings: server URL, agent token (Keychain), SPKI pin, Install/Uninstall extension buttons.
 - States: extension not installed / awaiting approval in System Settings / active / server unreachable (showing the last cached policy).
 - MVVM: View → ViewModel (`@Observable`, `@MainActor`) → service protocols (`PolicyServicing`, `ExtensionManaging`, `EventStreaming`, `NotificationPosting`).
 
-### 4.5 WardenServer
+### 4.5 GuardianServer
 - C++17, CMake, cpp-httplib + OpenSSL [proposed]; dependencies via vcpkg manifest on Windows, system packages / FetchContent on the Linux dev build. Code avoids WinAPI.
-- **Agent identity [proposed]:** one token per agent. Tokens are generated by the admin (CLI subcommand `warden-server token add <agentId>`), stored hashed in `data/agents.json`, revoked by removal. `agentId` is derived from the token on the server, not trusted from the payload.
+- **Agent identity [proposed]:** one token per agent. Tokens are generated by the admin (CLI subcommand `guardian-server token add <agentId>`), stored hashed in `data/agents.json`, revoked by removal. `agentId` is derived from the token on the server, not trusted from the payload.
 - **Endpoints** (JSON):
 
   | Method & path | Caller | Purpose |
@@ -153,15 +155,15 @@ The extension's testable logic (ES event → `AccessRequest` mapping, queue, pol
 - **Web panel:** single HTML page, vanilla JS, `tokens.css`, mockup A. Screens: "Policy" (rules table, draft JSON editor with validation result, "Publish vN+1") and "Events" (feed).
 
 ### 4.6 Design system [owner: direction A "Native Calm"]
-- Single source of truth: `warden-core/design-tokens/tokens.json` — semantic colors (light/dark), typography, spacing, radii.
-- Generator `generate.py` (Python 3, stdlib only) → `Tokens.swift` (WardenApp/DesignSystem) and `tokens.css` (panel). Generated files are committed in consuming repos; CI checks they are up to date **[proposed]**.
+- Single source of truth: `guardian-core/design-tokens/tokens.json` — semantic colors (light/dark), typography, spacing, radii.
+- Generator `generate.py` (Python 3, stdlib only) → `Tokens.swift` (GuardianApp/DesignSystem) and `tokens.css` (panel). Generated files are committed in consuming repos; CI checks they are up to date **[proposed]**.
 - SwiftUI components: `StatusHeader`, `EventRow`, `Badge`, `PolicyChip`, `WDButton`, each with `#Preview` in light and dark mode.
 
 ## 5. Repositories & branching [owner]
-- `warden-core` — CoreCpp + design-tokens. CI: macOS + Windows.
-- `warden-macos` — Tuist project; `warden-core` as a submodule pinned to a tag. CI: macOS.
-- `warden-server` — server + panel; `warden-core` as a submodule pinned to a tag. CI: Windows.
-- This document is committed to `warden-macos/docs/superpowers/specs/`; other repos link to it from their README **[proposed]**.
+- `guardian-core` — CoreCpp + design-tokens. CI: macOS + Windows.
+- `guardian-macos` — Tuist project; `guardian-core` as a submodule pinned to a tag. CI: macOS.
+- `guardian-server` — server + panel; `guardian-core` as a submodule pinned to a tag. CI: Windows.
+- This document is committed to `guardian-macos/docs/superpowers/specs/`; other repos link to it from their README **[proposed]**.
 - Branches: `main`, `develop`. Work goes into `feature/WRD-<n>-<slug>` (also `fix/…`, `chore/…`); PRs target **`develop`**. Releases: PR `develop → main` + tag `vX.Y.Z`.
 - Protection on `main`/`develop`: PR only, green CI required, linear history, no force push.
 - Conventional Commits, PR template, CODEOWNERS.
@@ -184,10 +186,10 @@ The extension's testable logic (ES event → `AccessRequest` mapping, queue, pol
 ## 8. Automation
 - **Local:** superpowers pipeline — writing-plans → subagent-driven-development (each task in its own worktree/branch) → code review → PR to `develop` via `gh`.
 - **Models [proposed]:** plan implementation by Sonnet; planning and review by Opus — to save budget.
-- **Cloud sessions [proposed]:** only `warden-core` and `warden-server` tasks (Linux dev build); used for isolated plan tasks in parallel with local work. When credits run out, continue locally.
+- **Cloud sessions [proposed]:** only `guardian-core` and `guardian-server` tasks (Linux dev build); used for isolated plan tasks in parallel with local work. When credits run out, continue locally.
 - **GitHub Actions:** build, tests, coverage, linters, gitleaks, token freshness check, `tuist graph` artifact; Dependabot for Actions and submodules.
-- **VPS preparation (plan task, done together with the owner) [owner]:** install OpenSSH Server with key‑only auth; open 8443 in Windows Firewall; generate the self‑signed TLS cert and compute the SPKI pin (script in `warden-server/scripts/`); register the server as a Windows service (NSSM or `sc.exe` [builder]).
-- **Server deployment:** on tag `vX.Y.Z` in `warden-server` → build on `windows-latest` → deploy to the VPS over SSH using a key from GitHub Secrets → restart the service. No self‑hosted runner on the VPS (unsafe for a public repo).
+- **VPS preparation (plan task, done together with the owner) [owner]:** install OpenSSH Server with key‑only auth; open 8443 in Windows Firewall; generate the self‑signed TLS cert and compute the SPKI pin (script in `guardian-server/scripts/`); register the server as a Windows service (NSSM or `sc.exe` [builder]).
+- **Server deployment:** on tag `vX.Y.Z` in `guardian-server` → build on `windows-latest` → deploy to the VPS over SSH using a key from GitHub Secrets → restart the service. No self‑hosted runner on the VPS (unsafe for a public repo).
 
 ## 9. v0.1 acceptance scenario [owner]
 1. **Panel on VPS:** draft policy with the rule "`.env` and `~/.ssh` are blocked for browsers and AI apps"; validation green; "Publish v2".
@@ -207,7 +209,7 @@ The extension's testable logic (ES event → `AccessRequest` mapping, queue, pol
 ## 11. Resolved questions (builder check)
 - **Allow‑ vs. blocklist:** blocklist of processes per rule; default allow **[owner]**.
 - **Threat model:** accidental leakage only in v0.1 **[owner]**.
-- **Linux:** unofficial dev build for CoreCpp and WardenServer so cloud sessions can be used **[owner]**.
+- **Linux:** unofficial dev build for CoreCpp and GuardianServer so cloud sessions can be used **[owner]**.
 - **VPS:** not prepared; setup is a joint plan task **[owner]**.
 - **Signing:** ad‑hoc + AMFI off; XPC check limited to identifier; day‑one spike **[proposed]**.
 - **Agent identity:** per‑agent tokens issued by admin CLI **[proposed]**.

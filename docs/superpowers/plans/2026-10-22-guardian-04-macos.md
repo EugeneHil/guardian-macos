@@ -1,26 +1,28 @@
-# Warden macOS Agent Implementation Plan (Plan 4 of 4)
+# Guardian macOS Agent Implementation Plan (Plan 4 of 4)
+
+> Formerly Warden.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the Warden macOS agent in `warden-macos`: a SwiftUI menu bar app (WardenApp), an Endpoint Security system extension (DlpExtension), an Objective-C++ bridge (CoreBridge) over warden-core, a Tuist project, CI, the design-system components, the e2e checklist and README, released as `v0.1.0` after the spec §9 scenario passes in the VM.
+**Goal:** Build the Guardian macOS agent in `guardian-macos`: a SwiftUI menu bar app (GuardianApp), an Endpoint Security system extension (DlpExtension), an Objective-C++ bridge (CoreBridge) over guardian-core, a Tuist project, CI, the design-system components, the e2e checklist and README, released as `v0.1.0` after the spec §9 scenario passes in the VM.
 
 **Architecture:** The app polls the server (SPKI-pinned HTTPS, `ETag`) and pushes the policy to the extension over XPC; it drains events from the extension and uploads them. The extension keeps an on-disk policy cache, answers `AUTH_OPEN` synchronously on a fast path, hands candidate paths to a watchdog-guarded evaluator, and fails open on every error. All testable logic lives in Swift files with no `EndpointSecurity` import; the ES client sits behind a thin adapter verified in the VM.
 
-**Tech Stack:** Swift 6 (language mode 6, strict concurrency `complete`), SwiftUI + `@Observable`, Objective-C++17, Tuist 4.212.0 (mise), XCTest/Swift Testing, EndpointSecurity, SystemExtensions, `Synchronization.Mutex`, CryptoKit (system), Security, UserNotifications, `warden-core` submodule at `v0.1.0` built by CMake into a static library. **No third-party dependencies.**
+**Tech Stack:** Swift 6 (language mode 6, strict concurrency `complete`), SwiftUI + `@Observable`, Objective-C++17, Tuist 4.212.0 (mise), XCTest/Swift Testing, EndpointSecurity, SystemExtensions, `Synchronization.Mutex`, CryptoKit (system), Security, UserNotifications, `guardian-core` submodule at `v0.1.0` built by CMake into a static library. **No third-party dependencies.**
 
-**Spec:** `docs/superpowers/specs/2026-10-20-warden-design.md` (§3 constraints, §4.1 components, §4.3 extension, §4.4 UI, §4.6 design system, §7 quality, §9 acceptance). Prior art: `docs/adr/0001-adhoc-signed-es-extension.md` (read it first), `docs/vm-setup.md`, the throwaway spike on branch `spike/WRD-3-adhoc-sysext` (`Spike/Project.swift`, `Spike/sign.sh`, `Spike/Ext/Info.plist`), Plan 2 (core API), and the contract `warden-server/docs/api.md`.
+**Spec:** `docs/superpowers/specs/2026-10-20-guardian-design.md` (§3 constraints, §4.1 components, §4.3 extension, §4.4 UI, §4.6 design system, §7 quality, §9 acceptance). Prior art: `docs/adr/0001-adhoc-signed-es-extension.md` (read it first), `docs/vm-setup.md`, the throwaway spike on branch `spike/WRD-3-adhoc-sysext` (`Spike/Project.swift`, `Spike/sign.sh`, `Spike/Ext/Info.plist`), Plan 2 (core API), and the contract `guardian-server/docs/api.md`.
 
-**Where the work happens:** all tasks run in `/Users/eugene/Mine/git/warden/warden-macos` (Claude Code started there so the guard hook is active). Paths are relative to that repo. Work lands in five PRs to `develop`: A = Tasks 1–3, B = Tasks 4–8, C = Tasks 9–13 (ES adapter, app services, VM smoke gate), D = Tasks 14–17, E = Tasks 18–19 (Task 19 is the release). Branches: A `feature/WRD-18-macos-scaffold`, B `feature/WRD-19-extension-logic`, C `feature/WRD-20-es-adapter-and-services`, D `feature/WRD-21-app-ui`, E `chore/WRD-22-docs-release`. **Ask the owner (AskUserQuestion) before every merge, before applying rulesets, before anything that touches the VM-based e2e run or the VPS, and before pushing the tag.** Squash merges only; `gh pr update-branch <n>` when behind. Commit trailer and PR footer as in `HANDOFF.md`. Claude cannot drive the VM: steps marked **[owner, VM]** are run by the owner, who pastes the outputs. The agent token, admin password and SSH keys never go into chat, files, logs or commits.
+**Where the work happens:** all tasks run in `/Users/eugene/Mine/git/guardian/guardian-macos` (Claude Code started there so the guard hook is active). Paths are relative to that repo. Work lands in five PRs to `develop`: A = Tasks 1–3, B = Tasks 4–8, C = Tasks 9–13 (ES adapter, app services, VM smoke gate), D = Tasks 14–17, E = Tasks 18–19 (Task 19 is the release). Branches: A `feature/WRD-18-macos-scaffold`, B `feature/WRD-19-extension-logic`, C `feature/WRD-20-es-adapter-and-services`, D `feature/WRD-21-app-ui`, E `chore/WRD-22-docs-release`. **Ask the owner (AskUserQuestion) before every merge, before applying rulesets, before anything that touches the VM-based e2e run or the VPS, and before pushing the tag.** Squash merges only; `gh pr update-branch <n>` when behind. Commit trailer and PR footer as in `HANDOFF.md`. Claude cannot drive the VM: steps marked **[owner, VM]** are run by the owner, who pastes the outputs. The agent token, admin password and SSH keys never go into chat, files, logs or commits.
 
 ## Global Constraints
 
 - Swift only through Swift Concurrency: `async/await`, actors, `AsyncStream`, `Task`. No GCD (`DispatchQueue`), `OperationQueue`, Combine or completion handlers in our code; callback APIs (XPC, `OSSystemExtensionRequest`, `URLSession` delegate, `UNUserNotificationCenter`) are wrapped once at the boundary. **Only exception:** the synchronous ES handler block; it never `await`s, reads the policy through a `Mutex`, answers the fast path inline, and starts a `Task` plus a watchdog `Task` for candidates. No force unwraps, no `try!`, no `fatalError` outside unreachable-by-construction code.
 - Warnings are errors: Swift 6 mode, `SWIFT_STRICT_CONCURRENCY=complete`, `SWIFT_TREAT_WARNINGS_AS_ERRORS=YES`, `GCC_TREAT_WARNINGS_AS_ERRORS=YES`, ObjC++ `-Wall -Wextra -Wpedantic`. SwiftLint `--strict` and SwiftFormat `--lint` are gates. Coverage gate: Swift logic (ViewModels, services, extension logic) ≥ 80 % lines.
-- No new dependency without an ADR. This plan adds none (system frameworks only; warden-core is the submodule, tag `v0.1.0`, linked as a prebuilt static library).
+- No new dependency without an ADR. This plan adds none (system frameworks only; guardian-core is the submodule, tag `v0.1.0`, linked as a prebuilt static library).
 - Ad-hoc signing per ADR-0001: build with `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""`, then `codesign --force --sign - --entitlements <file>` extension first, app second; `ENABLE_HARDENED_RUNTIME=NO`, `CODE_SIGN_STYLE=Manual`, deployment target macOS 15.0; the extension bundle is named after its bundle identifier (`PRODUCT_NAME` = identifier); extension `Info.plist` has `CFBundlePackageType=SYSX`, `NSSystemExtensionUsageDescription`, `NSEndpointSecurityEarlyBoot=false`, `NSEndpointSecurityMachServiceName`; extension entitlements `com.apple.developer.endpoint-security.client` + `com.apple.security.application-groups`; app entitlement `com.apple.developer.system-extension.install` (+ the same app group).
-- Identifiers: app `io.github.eugenehil.warden`, extension `io.github.eugenehil.warden.ext`, app group `io.github.eugenehil.warden`, Mach service `io.github.eugenehil.warden.ext` (must be prefixed by the app group, as in the spike). Logger subsystem `io.github.eugenehil.warden`; file paths are logged `privacy: .private`.
-- Extension policy cache `/Library/Application Support/Warden/policy.json`, mode 0600, written atomically. Event ring buffer 1000 entries, dedup of identical (process path, file, decision) within 5 s. Policy poll every 10 s. XPC peer check pins the bundle identifier only (no Team ID, spec §3).
-- Server contract is `warden-server/docs/api.md`: Bearer `wdn_<64 hex>`, SPKI pin = `base64(SHA-256(DER SubjectPublicKeyInfo))` (never fall back to CA validation), `If-None-Match` with the last `ETag`, events in batches ≤ 500 (at-least-once; retry on 5xx/timeout, drop on `400 invalid_events`, wait `Retry-After` on 429, stop on 401), compare `Content-Type` by media type only, cache the last good policy and keep enforcing it when the server is unreachable.
+- Identifiers: app `io.github.eugenehil.guardian`, extension `io.github.eugenehil.guardian.ext`, app group `io.github.eugenehil.guardian`, Mach service `io.github.eugenehil.guardian.ext` (must be prefixed by the app group, as in the spike). Logger subsystem `io.github.eugenehil.guardian`; file paths are logged `privacy: .private`.
+- Extension policy cache `/Library/Application Support/Guardian/policy.json`, mode 0600, written atomically. Event ring buffer 1000 entries, dedup of identical (process path, file, decision) within 5 s. Policy poll every 10 s. XPC peer check pins the bundle identifier only (no Team ID, spec §3).
+- Server contract is `guardian-server/docs/api.md`: Bearer `wdn_<64 hex>`, SPKI pin = `base64(SHA-256(DER SubjectPublicKeyInfo))` (never fall back to CA validation), `If-None-Match` with the last `ETag`, events in batches ≤ 500 (at-least-once; retry on 5xx/timeout, drop on `400 invalid_events`, wait `Retry-After` on 429, stop on 401), compare `Content-Type` by media type only, cache the last good policy and keep enforcing it when the server is unreachable.
 - Fail-open everywhere in the extension: no policy yet, unreadable or invalid cache, invalid pushed policy, evaluator error, missed watchdog, `std::bad_alloc` → allow.
 - TDD: failing test first, watch it fail, then implement. Never commit to `main`/`develop`; Conventional Commits; never `--no-verify`. Repository text in English. No `.env*`, `*.pem`, `*.key`, `*.p12`, `*.cer`, `config.local.json` anywhere (tests generate keys at run time).
 
@@ -40,21 +42,21 @@ Known and documented limitations: ES path form for process paths unverified (bri
 
 ```
 Project.swift, Tuist.swift, mise.toml, .swiftlint.yml, .swiftformat, .gitmodules
-external/warden-core                      submodule @ v0.1.0
+external/guardian-core                      submodule @ v0.1.0
 scripts/{build-corecpp,build,sign,test,lint,coverage}.sh, coverage_gate.py, test_coverage_gate.py, tokens.py
 CoreBridge/Sources/WD*.{h,mm}             Objective-C++ bridge (only place Swift meets C++)
 Shared/                                   compiled into app, extension and both test targets
-  BundleIDs.swift  ProcessIdentity.swift  AccessEvent.swift  WardenXPC.swift
+  BundleIDs.swift  ProcessIdentity.swift  AccessEvent.swift  GuardianXPC.swift
 DlpExtension/Sources/Logic/               no EndpointSecurity import; compiled into DlpExtensionTests
   PolicyHolder  PolicyStore  PolicyController  EventQueue  OpenCoordinator  ExtensionService
 DlpExtension/Sources/ES/                  EndpointSecurityClient, SecurityProcessResolver, main.swift (VM-verified)
 DlpExtension/{Info.plist,DlpExtension.entitlements}, DlpExtension/Tests/
-WardenApp/Sources/{Models,Services,ViewModels,Views,DesignSystem,Entry}   Entry/ and Views/ excluded from tests
-WardenApp/{WardenApp.entitlements}, WardenApp/Tests/
+GuardianApp/Sources/{Models,Services,ViewModels,Views,DesignSystem,Entry}   Entry/ and Views/ excluded from tests
+GuardianApp/{GuardianApp.entitlements}, GuardianApp/Tests/
 docs/{e2e-checklist.md, adr/0002-corecpp-in-tuist.md}
 ```
 
-Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `DlpExtension/Sources/Logic/**`), `WardenAppTests` (compiles `Shared/**` + `WardenApp/Sources/**` minus `Entry/**` and `Views/**`). Test targets have no host app.
+Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `DlpExtension/Sources/Logic/**`), `GuardianAppTests` (compiles `Shared/**` + `GuardianApp/Sources/**` minus `Entry/**` and `Views/**`). Test targets have no host app.
 
 ---
 
@@ -62,25 +64,25 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
 
 **Files:**
 - Create: `mise.toml`, `Tuist.swift`, `Project.swift`, `.swiftlint.yml`, `.swiftformat`, `scripts/{build,sign,test,lint}.sh`, `.github/workflows/ci.yml`
-- Create: `Shared/BundleIDs.swift`, `DlpExtension/Info.plist`, `DlpExtension/DlpExtension.entitlements`, `WardenApp/WardenApp.entitlements`, stub `WardenApp/Sources/Entry/WardenApp.swift` (`@main`, empty `MenuBarExtra`), stub `DlpExtension/Sources/ES/main.swift`, `DlpExtension/Tests/BundleIDsTests.swift`
+- Create: `Shared/BundleIDs.swift`, `DlpExtension/Info.plist`, `DlpExtension/DlpExtension.entitlements`, `GuardianApp/GuardianApp.entitlements`, stub `GuardianApp/Sources/Entry/GuardianApp.swift` (`@main`, empty `MenuBarExtra`), stub `DlpExtension/Sources/ES/main.swift`, `DlpExtension/Tests/BundleIDsTests.swift`
 - Modify: `README.md` (build/test/lint commands), `CLAUDE.md` (add a "Build & test" section; the file is project-owned, edit by hand if the guard hook blocks it)
 
 **Interfaces:**
-- Produces: `enum BundleIDs { static let app, extension, appGroup, machService: String }` with the values from Global Constraints (`extension` is spelled `` `extension` `` or `ext`; use `ext`). Targets `WardenApp` (app), `DlpExtension` (systemExtension, `PRODUCT_NAME = io.github.eugenehil.warden.ext`), `DlpExtensionTests`, `WardenAppTests`; shared `adhoc` settings dictionary as in the spike plus the warning flags from Global Constraints and `SWIFT_VERSION = 6.0`.
+- Produces: `enum BundleIDs { static let app, extension, appGroup, machService: String }` with the values from Global Constraints (`extension` is spelled `` `extension` `` or `ext`; use `ext`). Targets `GuardianApp` (app), `DlpExtension` (systemExtension, `PRODUCT_NAME = io.github.eugenehil.guardian.ext`), `DlpExtensionTests`, `GuardianAppTests`; shared `adhoc` settings dictionary as in the spike plus the warning flags from Global Constraints and `SWIFT_VERSION = 6.0`.
 - `scripts/build.sh` = `tuist generate --no-open`, unsigned `xcodebuild` into `build/`, then `scripts/sign.sh` (ADR-0001 finding 1; prints `codesign -dvv` identifier lines). `scripts/test.sh [--coverage]` runs `xcodebuild test` for both test schemes with `CODE_SIGNING_ALLOWED=NO`. `scripts/lint.sh` runs `swiftlint --strict` and `swiftformat --lint .`.
 - CI `.github/workflows/ci.yml` on `macos-latest` (jobs named `macos-build`, `macos-quality`; `tokens` is added in Task 14): `actions/checkout` with `submodules: recursive`, `jdx/mise-action` for Tuist, `brew install cmake ninja swiftlint swiftformat`; `macos-build` = `scripts/build.sh`; `macos-quality` = `scripts/lint.sh` + `scripts/test.sh --coverage` + coverage gate (Task 3).
 
 - [ ] **Step 1: Branch** `git switch develop && git pull --ff-only && git switch -c feature/WRD-18-macos-scaffold`.
 - [ ] **Step 2: Write the failing test** `DlpExtension/Tests/BundleIDsTests.swift`: `bundleIDsAreConsistent()` asserts `BundleIDs.ext == BundleIDs.app + ".ext"`, `BundleIDs.machService.hasPrefix(BundleIDs.appGroup)`, and that the extension `Info.plist` file (located via `#filePath`, two levels up) has `NSEndpointSecurityMachServiceName == BundleIDs.machService` and `CFBundlePackageType == "SYSX"` (parse with `PropertyListSerialization`).
 - [ ] **Step 3: Run to verify it fails** — `scripts/test.sh` → Expected: FAIL (`BundleIDs` undefined / no project). Create the Tuist skeleton only far enough for the failure to be the missing symbol.
-- [ ] **Step 4: Implement** `BundleIDs`, `Project.swift` (copy the spike's structure; `.unitTests` targets without host: `DlpExtensionTests` sources `Shared/**`, `DlpExtension/Sources/Logic/**`, `DlpExtension/Tests/**`; `WardenAppTests` analogous), the extension `Info.plist` (spike's plus `NSEndpointSecurityMachServiceName = $(BundleIDs machService literal)`), entitlements per Global Constraints, SwiftLint config (opt-in `force_unwrapping`, `force_try`, `fatal_error_message`; custom error-severity rules rejecting `DispatchQueue`, `OperationQueue` and `import Combine` everywhere), `.swiftformat` (Swift 6 target, 4 spaces, line width 120).
-- [ ] **Step 5: Run to verify it passes** — `scripts/test.sh` → Expected: `** TEST SUCCEEDED **` for both schemes; `scripts/build.sh` ends with `built: build/.../WardenApp.app` and `codesign -dvv` shows `Identifier=io.github.eugenehil.warden.ext`, `Signature=adhoc`, the endpoint-security entitlement; `scripts/lint.sh` exits 0.
+- [ ] **Step 4: Implement** `BundleIDs`, `Project.swift` (copy the spike's structure; `.unitTests` targets without host: `DlpExtensionTests` sources `Shared/**`, `DlpExtension/Sources/Logic/**`, `DlpExtension/Tests/**`; `GuardianAppTests` analogous), the extension `Info.plist` (spike's plus `NSEndpointSecurityMachServiceName = $(BundleIDs machService literal)`), entitlements per Global Constraints, SwiftLint config (opt-in `force_unwrapping`, `force_try`, `fatal_error_message`; custom error-severity rules rejecting `DispatchQueue`, `OperationQueue` and `import Combine` everywhere), `.swiftformat` (Swift 6 target, 4 spaces, line width 120).
+- [ ] **Step 5: Run to verify it passes** — `scripts/test.sh` → Expected: `** TEST SUCCEEDED **` for both schemes; `scripts/build.sh` ends with `built: build/.../GuardianApp.app` and `codesign -dvv` shows `Identifier=io.github.eugenehil.guardian.ext`, `Signature=adhoc`, the endpoint-security entitlement; `scripts/lint.sh` exits 0.
 - [ ] **Step 6: Commit** — `git add -A && git commit -m "build: add Tuist skeleton, ad-hoc signing scripts, lint and CI"`.
 
-### Task 2: warden-core submodule and CoreBridge
+### Task 2: guardian-core submodule and CoreBridge
 
 **Files:**
-- Create: `external/warden-core` (submodule at tag `v0.1.0`), `scripts/build-corecpp.sh`, `CoreBridge/Sources/{WDProcessInfo,WDAccessRequest,WDDecision,WDPolicy,WDEngine}.{h,mm}`, `CoreBridge/Sources/CoreBridge.h` (umbrella), `CoreBridge/Tests/CoreBridgeTests.swift`, `docs/adr/0002-corecpp-in-tuist.md`
+- Create: `external/guardian-core` (submodule at tag `v0.1.0`), `scripts/build-corecpp.sh`, `CoreBridge/Sources/{WDProcessInfo,WDAccessRequest,WDDecision,WDPolicy,WDEngine}.{h,mm}`, `CoreBridge/Sources/CoreBridge.h` (umbrella), `CoreBridge/Tests/CoreBridgeTests.swift`, `docs/adr/0002-corecpp-in-tuist.md`
 - Modify: `Project.swift` (targets `CoreBridge`, `CoreBridgeTests`; `DlpExtension` and the two test targets depend on `CoreBridge`)
 
 **Interfaces:**
@@ -88,23 +90,23 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
   - `WDProcessInfo(path:signingId:teamId:)` — empty string means absent.
   - `WDAccessRequest(filePath:process:responsible:)`, `responsible` nullable.
   - `WDDecision`: `BOOL deny`, `NSString *ruleId` (empty on allow).
-  - `WDPolicy`: `+policyWithJSON:error:` `NS_SWIFT_NAME(init(json:))` (`NSData`, fails with `NSError` domain `WDPolicyErrorDomain` whose `userInfo[WDPolicyValidationErrorsKey]` is `[String]` of `warden::describe` lines); `int64_t version`; `NSUInteger ruleCount`.
+  - `WDPolicy`: `+policyWithJSON:error:` `NS_SWIFT_NAME(init(json:))` (`NSData`, fails with `NSError` domain `WDPolicyErrorDomain` whose `userInfo[WDPolicyValidationErrorsKey]` is `[String]` of `guardian::describe` lines); `int64_t version`; `NSUInteger ruleCount`.
   - `WDEngine`: `-initWithPolicy:`; `-evaluate:` → `WDDecision`; `-isPotentiallyProtectedPath:(const char *)path length:(NSUInteger)length` → `BOOL` (allocation-free, no `NSString`); `+coreVersion` → `"0.1.0"`.
-- `evaluate` normalizes `process.path` and `responsible.path` with `warden::normalizePath` before building the C++ request (ADR-0001: ES path form unverified) and catches every C++ exception (`std::bad_alloc` included) returning an allow `WDDecision`.
-- `scripts/build-corecpp.sh` runs `cmake --preset macos -S external/warden-core -B build/corecpp -DWARDEN_BUILD_TESTS=OFF` (Release), builds `warden_core`, and leaves `build/corecpp/libwarden_core.a`; Tuist runs it as a pre-build script of `CoreBridge` (`.pre(script:)`), `HEADER_SEARCH_PATHS = external/warden-core/include` (+ nlohmann is private to the static lib, no include needed), `OTHER_LDFLAGS = build/corecpp/libwarden_core.a`, `CLANG_CXX_LANGUAGE_STANDARD = c++17`, product `.staticFramework` so it links into the extension without embedding.
+- `evaluate` normalizes `process.path` and `responsible.path` with `guardian::normalizePath` before building the C++ request (ADR-0001: ES path form unverified) and catches every C++ exception (`std::bad_alloc` included) returning an allow `WDDecision`.
+- `scripts/build-corecpp.sh` runs `cmake --preset macos -S external/guardian-core -B build/corecpp -DGUARDIAN_BUILD_TESTS=OFF` (Release), builds `guardian_core`, and leaves `build/corecpp/libguardian_core.a`; Tuist runs it as a pre-build script of `CoreBridge` (`.pre(script:)`), `HEADER_SEARCH_PATHS = external/guardian-core/include` (+ nlohmann is private to the static lib, no include needed), `OTHER_LDFLAGS = build/corecpp/libguardian_core.a`, `CLANG_CXX_LANGUAGE_STANDARD = c++17`, product `.staticFramework` so it links into the extension without embedding.
 
-- [ ] **Step 1: Submodule** — `git submodule add https://github.com/EugeneHil/warden-core.git external/warden-core && git -C external/warden-core checkout v0.1.0`.
+- [ ] **Step 1: Submodule** — `git submodule add https://github.com/EugeneHil/guardian-core.git external/guardian-core && git -C external/guardian-core checkout v0.1.0`.
 - [ ] **Step 2: Write the failing tests** `CoreBridgeTests.swift`, with a helper `policy(_ json: String)`: `parsesAndEvaluatesDeny` (rule `**/.env` + `{signingIdPrefix: "com.google.Chrome"}`; request for `/Users/a/p/.env` by `com.google.Chrome.helper` → `deny`, `ruleId` equals the rule id); `allowsNonBlocklistedProcess`; `invalidPolicyThrowsWithPaths` (error `userInfo` contains a line starting `rules[0]`); `normalizesProcessPath` (matcher `{path: "/private/tmp/x"}`, process path `/tmp/x` → deny); `responsibleProcessIsMatched` (opener unsigned, responsible `com.anthropic.claude` → deny); `prefilterTakesRawBytes` (bytes of `/Users/a/.env` → true, `/usr/lib/libc.dylib` → false, embedded invalid UTF-8 bytes → no crash); `coreVersionIsPinned` (`"0.1.0"`).
 - [ ] **Step 3: Run to verify it fails** — `scripts/test.sh` → Expected: FAIL (no `CoreBridge` module).
 - [ ] **Step 4: Implement** the bridge and the Tuist wiring. `.mm` files own all C++ types; headers expose only Foundation types.
 - [ ] **Step 5: Run to verify it passes** — `scripts/test.sh` → Expected: all `CoreBridgeTests` pass; build log shows no warnings.
 - [ ] **Step 6: Write `docs/adr/0002-corecpp-in-tuist.md`** (≤ 40 lines): CMake pre-build static library vs xcframework (spec §10 left it to the builder), `.staticFramework` choice so the extension needs no embedded framework (simplifies ad-hoc signing), arm64-only, how to bump the submodule tag, why no new dependency.
-- [ ] **Step 7: Commit** — `git add -A && git commit -m "feat: add CoreBridge over warden-core v0.1.0"`.
+- [ ] **Step 7: Commit** — `git add -A && git commit -m "feat: add CoreBridge over guardian-core v0.1.0"`.
 
 ### Task 3: Shared models, XPC contract, coverage gate
 
 **Files:**
-- Create: `Shared/ProcessIdentity.swift`, `Shared/AccessEvent.swift`, `Shared/WardenXPC.swift`, `scripts/coverage.sh`, `scripts/coverage_gate.py`, `scripts/test_coverage_gate.py`, `DlpExtension/Tests/SharedModelsTests.swift`
+- Create: `Shared/ProcessIdentity.swift`, `Shared/AccessEvent.swift`, `Shared/GuardianXPC.swift`, `scripts/coverage.sh`, `scripts/coverage_gate.py`, `scripts/test_coverage_gate.py`, `DlpExtension/Tests/SharedModelsTests.swift`
 - Modify: `.github/workflows/ci.yml` (coverage step), `README.md`
 
 **Interfaces:**
@@ -112,8 +114,8 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
   - `struct ProcessIdentity { var path: String; var signingId: String; var teamId: String }` — empty string = absent; `static let unknown`.
   - `enum AccessDecision: String { case allow, deny }`.
   - `struct AccessEvent: Identifiable { let id: UUID; var timestamp: Date; var process: ProcessIdentity; var responsible: ProcessIdentity?; var file: String; var decision: AccessDecision; var ruleId: String? }` with `static func uploadPayload(_ events: [AccessEvent]) throws -> Data` producing the server batch format (`ts` as `yyyy-MM-dd'T'HH:mm:ss'Z'` UTC; empty `signingId`/`teamId` omitted; `responsible` null when nil; `ruleId` omitted when nil/empty; strings truncated to 4096 UTF-8 bytes on a character boundary).
-  - `@objc protocol WardenExtensionXPC` (NSXPC, async): `apply(policyData: Data) async throws -> Int64` (returns the applied version), `currentPolicyVersion() async -> Int64` (0 = none), `drainEvents(max: Int) async -> Data` (JSON array of `AccessEvent`), `subscribe(client: WardenClientXPC) async`.
-  - `@objc protocol WardenClientXPC`: `eventRecorded(_ eventData: Data) async` (one JSON `AccessEvent`).
+  - `@objc protocol GuardianExtensionXPC` (NSXPC, async): `apply(policyData: Data) async throws -> Int64` (returns the applied version), `currentPolicyVersion() async -> Int64` (0 = none), `drainEvents(max: Int) async -> Data` (JSON array of `AccessEvent`), `subscribe(client: GuardianClientXPC) async`.
+  - `@objc protocol GuardianClientXPC`: `eventRecorded(_ eventData: Data) async` (one JSON `AccessEvent`).
   - `enum XPCCoding { static func encode(_ e: AccessEvent) throws -> Data; static func decode(_ d: Data) throws -> AccessEvent; static func decodeList(_ d: Data) throws -> [AccessEvent] }` (ISO-8601 dates).
 - `scripts/coverage_gate.py --min 80 --exclude <regex>… <xccov.json>` reads `xcrun xccov view --report --json` output and exits 1 below the threshold; default excludes: `/Views/`, `/Entry/`, `/DesignSystem/`, `/ES/`, `Keychain`, `/Tests/`. `scripts/coverage.sh` runs `scripts/test.sh --coverage` and pipes both test bundles through the gate.
 
@@ -121,7 +123,7 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
 - [ ] **Step 2: Run to verify they fail** — `scripts/test.sh` and the unittest command → Expected: FAIL (symbols / script missing).
 - [ ] **Step 3: Implement** the models, XPC protocols, gate script and `coverage.sh`; add `python3 -I -B -m unittest discover -s scripts` and the coverage step to `macos-quality`.
 - [ ] **Step 4: Run to verify they pass** — `scripts/test.sh`, `python3 -I -B -m unittest discover -s scripts` → Expected: all pass; `scripts/coverage.sh` prints a total ≥ 80 % (the gate has little to cover yet; it must not fail on an almost-empty report).
-- [ ] **Step 5: Commit, push, open PR A** — `git add -A && git commit -m "feat: add shared event models, XPC contract and coverage gate"`; `git push -u origin HEAD`; `gh pr create --base develop --title "feat: macOS scaffold, CoreBridge and shared models" --body …` (summary, test evidence; footer from HANDOFF). **Ask the owner before merging.** After merge: `gh api` apply the new required checks — **ask the owner**, then run `<warden-core>/tooling/github/bootstrap-repo.sh warden-macos "<description>" macos-build macos-quality` from inside this repo (idempotent; `tokens` is added after Task 14). If checks cannot be required before they have run once, merge first, then apply.
+- [ ] **Step 5: Commit, push, open PR A** — `git add -A && git commit -m "feat: add shared event models, XPC contract and coverage gate"`; `git push -u origin HEAD`; `gh pr create --base develop --title "feat: macOS scaffold, CoreBridge and shared models" --body …` (summary, test evidence; footer from HANDOFF). **Ask the owner before merging.** After merge: `gh api` apply the new required checks — **ask the owner**, then run `<guardian-core>/tooling/github/bootstrap-repo.sh guardian-macos "<description>" macos-build macos-quality` from inside this repo (idempotent; `tokens` is added after Task 14). If checks cannot be required before they have run once, merge first, then apply.
 
 ### Task 4: Extension policy state — `PolicyHolder`, `PolicyStore`, `PolicyController`
 
@@ -150,7 +152,7 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
 
 **Interfaces:**
 - Consumes: `AccessEvent` (Task 3).
-- Produces: `protocol EventRecording: Sendable { func record(_ event: AccessEvent) async }`; `actor EventQueue: EventRecording` — `init(capacity: Int = 1000, dedupeWindow: Duration = .seconds(5), clock: any Clock<Duration> = ContinuousClock())`; `func record(_:)` (drops a duplicate of the same `(process.path, file, decision)` within the window, drops the oldest on overflow, yields to `updates`); `func drain(max: Int) -> [AccessEvent]` (removes and returns up to `max`, oldest first); `nonisolated let updates: AsyncStream<AccessEvent>` (single consumer, `bufferingNewest(100)`); `var count: Int`. `ManualClock` test helper in `DlpExtension/Tests/Support/ManualClock.swift` (also copied to `WardenApp/Tests/Support/`).
+- Produces: `protocol EventRecording: Sendable { func record(_ event: AccessEvent) async }`; `actor EventQueue: EventRecording` — `init(capacity: Int = 1000, dedupeWindow: Duration = .seconds(5), clock: any Clock<Duration> = ContinuousClock())`; `func record(_:)` (drops a duplicate of the same `(process.path, file, decision)` within the window, drops the oldest on overflow, yields to `updates`); `func drain(max: Int) -> [AccessEvent]` (removes and returns up to `max`, oldest first); `nonisolated let updates: AsyncStream<AccessEvent>` (single consumer, `bufferingNewest(100)`); `var count: Int`. `ManualClock` test helper in `DlpExtension/Tests/Support/ManualClock.swift` (also copied to `GuardianApp/Tests/Support/`).
 
 - [ ] **Step 1: Write the failing tests** — `DrainReturnsOldestFirstAndRemoves`, `DrainRespectsMax`, `DuplicateWithinWindowIsDropped`, `DuplicateAfterWindowIsKept` (advance `ManualClock` 6 s), `DifferentDecisionIsNotDuplicate`, `OverflowDropsOldest` (capacity 3, record 5 → ids 3–5 remain), `TenThousandEventsStayBounded` (default capacity, `count == 1000`), `UpdatesStreamYieldsRecordedEvents`.
 - [ ] **Step 2: Run to verify they fail** — `scripts/test.sh` → Expected: FAIL.
@@ -186,10 +188,10 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
 - Create: `DlpExtension/Sources/Logic/ExtensionService.swift`, `DlpExtension/Tests/ExtensionServiceTests.swift`
 
 **Interfaces:**
-- Consumes: `PolicyController`, `EventQueue`, `WardenExtensionXPC`, `WardenClientXPC`, `XPCCoding`.
-- Produces: `final class ExtensionService: NSObject, WardenExtensionXPC, NSXPCListenerDelegate` — `init(policy: PolicyController, events: EventQueue)`; implements the protocol (`apply` maps `PolicyApplyError` to an `NSError` with domain `io.github.eugenehil.warden` and the validation lines in `userInfo`), `subscribe` stores the client and starts one forwarding `Task` over `events.updates` (a client that throws is dropped); `static func peerRequirement() -> String` = `identifier "io.github.eugenehil.warden"`; `listener(_:shouldAcceptNewConnection:)` sets `exportedInterface`/`remoteObjectInterface` (`NSXPCInterface(with:)`), calls `setCodeSigningRequirement(Self.peerRequirement())`, exports `self`, resumes.
+- Consumes: `PolicyController`, `EventQueue`, `GuardianExtensionXPC`, `GuardianClientXPC`, `XPCCoding`.
+- Produces: `final class ExtensionService: NSObject, GuardianExtensionXPC, NSXPCListenerDelegate` — `init(policy: PolicyController, events: EventQueue)`; implements the protocol (`apply` maps `PolicyApplyError` to an `NSError` with domain `io.github.eugenehil.guardian` and the validation lines in `userInfo`), `subscribe` stores the client and starts one forwarding `Task` over `events.updates` (a client that throws is dropped); `static func peerRequirement() -> String` = `identifier "io.github.eugenehil.guardian"`; `listener(_:shouldAcceptNewConnection:)` sets `exportedInterface`/`remoteObjectInterface` (`NSXPCInterface(with:)`), calls `setCodeSigningRequirement(Self.peerRequirement())`, exports `self`, resumes.
 
-- [ ] **Step 1: Write the failing tests** (direct calls, no real XPC): `ApplyReturnsVersion`, `ApplyInvalidThrowsWithValidationLines`, `CurrentPolicyVersionIsZeroBeforeApply`, `DrainReturnsEncodedEventsAndEmpties`, `SubscribedClientReceivesRecordedEvent`, `PeerRequirementPinsBundleIdentifier` (string equals `identifier "io.github.eugenehil.warden"`).
+- [ ] **Step 1: Write the failing tests** (direct calls, no real XPC): `ApplyReturnsVersion`, `ApplyInvalidThrowsWithValidationLines`, `CurrentPolicyVersionIsZeroBeforeApply`, `DrainReturnsEncodedEventsAndEmpties`, `SubscribedClientReceivesRecordedEvent`, `PeerRequirementPinsBundleIdentifier` (string equals `identifier "io.github.eugenehil.guardian"`).
 - [ ] **Step 2: Run to verify they fail** — `scripts/test.sh` → Expected: FAIL.
 - [ ] **Step 3: Implement** as specified. `shouldAcceptNewConnection` is boundary glue: keep it a few lines and put every decision into the tested members.
 - [ ] **Step 4: Run to verify they pass** — `scripts/test.sh` → Expected: PASS.
@@ -215,24 +217,24 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
   - `Logic/ESDeadline.swift`: `enum ESDeadline { static func remaining(deadline: UInt64, now: UInt64, timebase: (numer: UInt32, denom: UInt32)) -> Duration }` (mach-absolute-time delta → `Duration`, clamped at zero, overflow-safe) — the only ES-adjacent code with unit tests.
   - `final class EndpointSecurityClient: CacheClearing` — if the `es_client_t` pointer forces `@unchecked Sendable`, confine it to this file with a one-line justification. `init(coordinator: OpenCoordinator, log:) throws`; creates the client with `es_new_client`, mutes the own process (`es_mute_process` with the own audit token), subscribes to `ES_EVENT_TYPE_AUTH_OPEN`; handler: build the raw path buffer from `es_string_token_t` (no `String`), `coordinator.fastPathAllows` → `es_respond_flags_result(client, message, UInt32.max, true)`; otherwise `es_retain_message`, build `OpenRequest` (process identity from `es_process_t`: path, `signing_id`, `team_id`; responsible token from `responsible_audit_token`), call `handleCandidate` with a respond closure that maps `.allow` → `es_respond_flags_result(…, UInt32.max, false)`, `.deny` → `(…, 0, false)`, then `es_release_message`; `func clearCache()` → `es_clear_cache`. Any unexpected state → allow.
   - `struct SecurityProcessResolver: ProcessResolving` — pid via `proc_pidpath`, signing id and team id via `SecCodeCopyGuestWithAttributes(kSecGuestAttributePid)` + `SecCodeCopySigningInformation`; returns nil on any failure.
-  - `main.swift`: create `PolicyHolder`, `PolicyStore(fileURL: /Library/Application Support/Warden/policy.json)`, `EventQueue`, `PolicyController`, `OpenCoordinator`, `EndpointSecurityClient`; start `policy.start()` in a `Task` (events allowed until loaded); start the `NSXPCListener(machServiceName: BundleIDs.machService)` with `ExtensionService` as delegate; park with `try await Task.sleep` forever inside an async `@main`-free top-level (top-level `await` in `main.swift`). Logger subsystem as in Global Constraints.
+  - `main.swift`: create `PolicyHolder`, `PolicyStore(fileURL: /Library/Application Support/Guardian/policy.json)`, `EventQueue`, `PolicyController`, `OpenCoordinator`, `EndpointSecurityClient`; start `policy.start()` in a `Task` (events allowed until loaded); start the `NSXPCListener(machServiceName: BundleIDs.machService)` with `ExtensionService` as delegate; park with `try await Task.sleep` forever inside an async `@main`-free top-level (top-level `await` in `main.swift`). Logger subsystem as in Global Constraints.
 
 - [ ] **Step 1: Write the failing tests** — `ESDeadlineTests`: `ConvertsMachTicksWithTimebase` (timebase 125/3, delta 3_000 ticks → 125_000 ns), `PastDeadlineClampsToZero`, `HugeDeadlineDoesNotOverflow` (`UInt64.max` delta).
 - [ ] **Step 2: Run to verify they fail** — `scripts/test.sh` → Expected: FAIL.
 - [ ] **Step 3: Implement** `ESDeadline`, then the ES files (compile-checked by `scripts/build.sh`, behavior checked in the VM).
-- [ ] **Step 4: Run tests + build** — `scripts/test.sh && scripts/build.sh` → Expected: PASS; signed bundle with Identifier `io.github.eugenehil.warden.ext`.
+- [ ] **Step 4: Run tests + build** — `scripts/test.sh && scripts/build.sh` → Expected: PASS; signed bundle with Identifier `io.github.eugenehil.guardian.ext`.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: add Endpoint Security adapter and extension entry point"`. The VM smoke gate for this task runs in Task 13 Step 6, once the app can install the extension.
 
 ### Task 10: Settings, secrets, SPKI pin
 
 **Files:**
-- Create: `WardenApp/Sources/Services/{AgentSettings,SecretStore,KeychainSecretStore,SPKIPin}.swift`, `WardenApp/Tests/{AgentSettingsTests,SPKIPinTests}.swift`, `WardenApp/Tests/Support/InMemorySecretStore.swift`
+- Create: `GuardianApp/Sources/Services/{AgentSettings,SecretStore,KeychainSecretStore,SPKIPin}.swift`, `GuardianApp/Tests/{AgentSettingsTests,SPKIPinTests}.swift`, `GuardianApp/Tests/Support/InMemorySecretStore.swift`
 
 **Interfaces:**
 - Produces:
   - `struct AgentSettings: Equatable, Sendable { var serverURL: URL?; var spkiPin: String }` with `static func validate(urlText:String, pin:String, token:String) -> [SettingsIssue]` (`enum SettingsIssue: Equatable { invalidURL, notHTTPS, invalidPin, invalidToken }`: URL must be `https` with a host; pin is base64 of exactly 32 bytes; token matches `^wdn_[0-9a-f]{64}$`).
-  - `protocol SettingsStoring: Sendable { func load() -> AgentSettings; func save(_ s: AgentSettings) }` and `UserDefaultsSettingsStore` (suite `io.github.eugenehil.warden`).
-  - `protocol SecretStoring: Sendable { func token() async throws -> String?; func saveToken(_ t: String) async throws; func deleteToken() async throws }`; `KeychainSecretStore` (generic password, service `io.github.eugenehil.warden.agent-token`; Keychain calls are synchronous C APIs and are called directly); `InMemorySecretStore` in tests.
+  - `protocol SettingsStoring: Sendable { func load() -> AgentSettings; func save(_ s: AgentSettings) }` and `UserDefaultsSettingsStore` (suite `io.github.eugenehil.guardian`).
+  - `protocol SecretStoring: Sendable { func token() async throws -> String?; func saveToken(_ t: String) async throws; func deleteToken() async throws }`; `KeychainSecretStore` (generic password, service `io.github.eugenehil.guardian.agent-token`; Keychain calls are synchronous C APIs and are called directly); `InMemorySecretStore` in tests.
   - `enum SPKIPin { static let p256Header: [UInt8] /* 26-byte ASN.1 SPKI prefix for secp256r1 */; static func hash(x963PublicKey: Data) -> String?` (nil unless 65 bytes starting `0x04`); `static func hash(of certificate: SecCertificate) -> String?` (requires `kSecAttrKeyTypeECSECPrimeRandom`, 256 bits); `static func matches(_ actual: String, _ expected: String) -> Bool` (constant-time compare)`}`.
 
 - [ ] **Step 1: Write the failing tests** — `validatesHttpsUrl` (`http://x` → `notHTTPS`, `garbage` → `invalidURL`), `validatesPin` (valid 32-byte base64 ok; 31 bytes/not base64 → `invalidPin`), `validatesToken` (63 and 65 hex chars, uppercase hex, missing prefix → `invalidToken`), `tokenNeverAppearsInIssueDescription`; `SPKIPinTests`: `matchesCryptoKitDerHash` (generate `P256.Signing.PrivateKey()` at run time; expected = `base64(SHA256(publicKey.derRepresentation))`; actual = `SPKIPin.hash(x963PublicKey: publicKey.x963Representation)`; equal), `rejectsWrongLengthKey`, `rejectsNonUncompressedPoint`, `matchesIsFalseForDifferentPin`, `inMemoryStoreRoundTripsToken`.
@@ -244,7 +246,7 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
 ### Task 11: Pinned HTTP client — `AgentAPI`
 
 **Files:**
-- Create: `WardenApp/Sources/Services/{AgentAPI,HTTPAgentAPI,PinnedURLSession}.swift`, `WardenApp/Tests/{HTTPAgentAPITests}.swift`, `WardenApp/Tests/Support/FakeHTTPTransport.swift`
+- Create: `GuardianApp/Sources/Services/{AgentAPI,HTTPAgentAPI,PinnedURLSession}.swift`, `GuardianApp/Tests/{HTTPAgentAPITests}.swift`, `GuardianApp/Tests/Support/FakeHTTPTransport.swift`
 
 **Interfaces:**
 - Consumes: `AgentSettings`, `SecretStoring`, `SPKIPin`, `AccessEvent.uploadPayload`.
@@ -264,7 +266,7 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
 ### Task 12: `PolicySyncService` and `EventUploader`
 
 **Files:**
-- Create: `WardenApp/Sources/Services/{ExtensionLinking,PolicySyncService,EventUploader}.swift`, `WardenApp/Tests/{PolicySyncServiceTests,EventUploaderTests}.swift`, `WardenApp/Tests/Support/{FakeAgentAPI,FakeExtensionLink,ManualClock}.swift`
+- Create: `GuardianApp/Sources/Services/{ExtensionLinking,PolicySyncService,EventUploader}.swift`, `GuardianApp/Tests/{PolicySyncServiceTests,EventUploaderTests}.swift`, `GuardianApp/Tests/Support/{FakeAgentAPI,FakeExtensionLink,ManualClock}.swift`
 
 **Interfaces:**
 - Consumes: `AgentAPI`, `AgentAPIError`.
@@ -283,13 +285,13 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
 ### Task 13: Extension link (XPC client), extension manager, notifications
 
 **Files:**
-- Create: `WardenApp/Sources/Services/{ExtensionLink,ExtensionManager,ExtensionState,NotificationPoster,BlockNotifier}.swift`, `WardenApp/Tests/{ExtensionLinkTests,ExtensionStateTests,BlockNotifierTests}.swift`, `WardenApp/Tests/Support/FakeXPCConnection.swift`
-- Modify: `Project.swift` (link `SystemExtensions`, `UserNotifications`), `WardenApp/Sources/Entry/WardenApp.swift` (temporary Install/Uninstall menu items for the Task 9 VM gate)
+- Create: `GuardianApp/Sources/Services/{ExtensionLink,ExtensionManager,ExtensionState,NotificationPoster,BlockNotifier}.swift`, `GuardianApp/Tests/{ExtensionLinkTests,ExtensionStateTests,BlockNotifierTests}.swift`, `GuardianApp/Tests/Support/FakeXPCConnection.swift`
+- Modify: `Project.swift` (link `SystemExtensions`, `UserNotifications`), `GuardianApp/Sources/Entry/GuardianApp.swift` (temporary Install/Uninstall menu items for the Task 9 VM gate)
 
 **Interfaces:**
-- Consumes: `ExtensionLinking` (Task 12), `WardenExtensionXPC`, `WardenClientXPC`.
+- Consumes: `ExtensionLinking` (Task 12), `GuardianExtensionXPC`, `GuardianClientXPC`.
 - Produces:
-  - `protocol XPCConnectionProviding: Sendable { func connect() -> any XPCSession }`, `protocol XPCSession: Sendable { var service: any WardenExtensionXPC { get }; func interruptions() -> AsyncStream<Void> /* yields on interruption or invalidation */; func invalidate() }` — a thin wrapper over `NSXPCConnection(machServiceName: BundleIDs.machService, options: .privileged)` (the only callback code, handlers bridged to `AsyncStream`), exported object = a `WardenClientXPC` that yields decoded events into the link's stream.
+  - `protocol XPCConnectionProviding: Sendable { func connect() -> any XPCSession }`, `protocol XPCSession: Sendable { var service: any GuardianExtensionXPC { get }; func interruptions() -> AsyncStream<Void> /* yields on interruption or invalidation */; func invalidate() }` — a thin wrapper over `NSXPCConnection(machServiceName: BundleIDs.machService, options: .privileged)` (the only callback code, handlers bridged to `AsyncStream`), exported object = a `GuardianClientXPC` that yields decoded events into the link's stream.
   - `actor ExtensionLink: ExtensionLinking` — `init(provider:, clock:, callTimeout: Duration = .seconds(5))`; every call races the XPC call against `callTimeout` (task group) and throws `ExtensionLinkError.unavailable` on timeout/interruption; after an interruption/invalidation it reconnects on the next call and re-sends `subscribe`.
   - `enum ExtensionState: Equatable, Sendable { unknown, notInstalled, awaitingApproval, active, failed(String) }`; pure reducer `ExtensionState.reduce(_ state, event: ExtensionRequestEvent)` for `ExtensionRequestEvent { finished(rebootNeeded: Bool), failed(code: Int), needsApproval, propertiesActive(Bool) }`.
   - `protocol ExtensionManaging: Sendable { func refresh() async; func install() async; func uninstall() async; nonisolated var states: AsyncStream<ExtensionState> { get } }` and `ExtensionManager` — runs `OSSystemExtensionRequest` activation/deactivation/properties requests; the delegate object turns callbacks into `ExtensionRequestEvent` through an `AsyncStream` continuation (single boundary), always replies `.replace` to `actionForReplacing`.
@@ -301,30 +303,30 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
 - [ ] **Step 3: Implement** the types; keep `NSXPCConnection`/`OSSystemExtensionRequestDelegate`/`UNUserNotificationCenter` code in the three smallest boundary files.
 - [ ] **Step 4: Run to verify they pass** — `scripts/test.sh` → Expected: PASS.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: add XPC extension link, system extension manager and block notifications"`.
-- [ ] **Step 6: [owner, VM] smoke gate for Tasks 9 and 13.** Owner restores the `es-ready` snapshot, copies `build/…/WardenApp.app` into the guest, presses the temporary `Install extension` menu item, approves it in System Settings and grants Full Disk Access. In the guest: put a hand-made policy at `/Library/Application Support/Warden/policy.json` (one rule, target `**/.env`, matcher `{"path":"/bin/cat"}`; the cache is read at extension start, so restart the extension or reboot once); then `systemextensionsctl list` shows `[activated enabled]`, `cat /tmp/x/.env` → `Operation not permitted`, `cat` on another file succeeds, `sudo kill -9 <ext pid>` → the extension is back and denies again. The owner pastes the outputs. Record the observed ES path form (`/tmp/…` or `/private/tmp/…`) and, if it contradicts the bridge's normalization, add a test to Task 2's suite and a note to ADR-0001.
+- [ ] **Step 6: [owner, VM] smoke gate for Tasks 9 and 13.** Owner restores the `es-ready` snapshot, copies `build/…/GuardianApp.app` into the guest, presses the temporary `Install extension` menu item, approves it in System Settings and grants Full Disk Access. In the guest: put a hand-made policy at `/Library/Application Support/Guardian/policy.json` (one rule, target `**/.env`, matcher `{"path":"/bin/cat"}`; the cache is read at extension start, so restart the extension or reboot once); then `systemextensionsctl list` shows `[activated enabled]`, `cat /tmp/x/.env` → `Operation not permitted`, `cat` on another file succeeds, `sudo kill -9 <ext pid>` → the extension is back and denies again. The owner pastes the outputs. Record the observed ES path form (`/tmp/…` or `/private/tmp/…`) and, if it contradicts the bridge's normalization, add a test to Task 2's suite and a note to ADR-0001.
 - [ ] **Step 7: Push and open PR C** (`feat: Endpoint Security adapter and app services`). **Ask the owner before merging.**
 
 ### Task 14: Design system — tokens and components
 
 **Files:**
-- Create: `scripts/tokens.py`, `scripts/test_tokens.py`, `WardenApp/Sources/DesignSystem/{Tokens,StatusHeader,EventRow,Badge,PolicyChip,WDButton}.swift`, `WardenApp/Sources/ViewModels/EventRowModel.swift`, `WardenApp/Tests/EventRowModelTests.swift`
+- Create: `scripts/tokens.py`, `scripts/test_tokens.py`, `GuardianApp/Sources/DesignSystem/{Tokens,StatusHeader,EventRow,Badge,PolicyChip,WDButton}.swift`, `GuardianApp/Sources/ViewModels/EventRowModel.swift`, `GuardianApp/Tests/EventRowModelTests.swift`
 - Modify: `.github/workflows/ci.yml` (job `tokens` on `ubuntu-24.04`, python 3.9: `python3 -I -B -m unittest discover -s scripts` is already in `macos-quality`; `tokens` runs `python3 -I -B scripts/tokens.py --check`)
 
 **Interfaces:**
-- `scripts/tokens.py [--check]` mirrors `warden-server/scripts/tokens.py`: runs `external/warden-core/design-tokens/generate.py` with `--css` into a temporary directory (so the submodule stays clean — the known `--css`-only quirk) and `--swift WardenApp/Sources/DesignSystem/Tokens.swift`; `--check` exits 1 when the committed file is missing or stale.
+- `scripts/tokens.py [--check]` mirrors `guardian-server/scripts/tokens.py`: runs `external/guardian-core/design-tokens/generate.py` with `--css` into a temporary directory (so the submodule stays clean — the known `--css`-only quirk) and `--swift GuardianApp/Sources/DesignSystem/Tokens.swift`; `--check` exits 1 when the committed file is missing or stale.
 - Produces SwiftUI components (macOS 15, each with `#Preview` in light and dark via `.preferredColorScheme`): `StatusHeader(title: String, isOn: Bool)` (title + ON/OFF `Badge`), `Badge(_ text: String, kind: BadgeKind)` with `enum BadgeKind { case blocked, ok, neutral }` (danger/success/neutral tokens), `EventRow(model: EventRowModel)`, `PolicyChip(_ text: String)`, `WDButton(_ title: String, style: WDButtonStyle = .primary, action: @escaping @MainActor () -> Void)` (`enum WDButtonStyle { primary, secondary }`). Colors/fonts/spacing only from `Tokens` (no literals); mockup A "Native Calm".
 - `struct EventRowModel: Identifiable, Equatable { let id: UUID; let title: String /* "Chrome → .env" */; let subtitle: String /* "~/proj/api/.env · 12 s ago" */; let badge: BadgeKind; let badgeText: String }` with `init(event: AccessEvent, now: Date, home: String)`: process name = last path component of `process.path` (or the responsible's when the opener is a helper and the responsible resolves), file shown as last component in the title, full path with `home` replaced by `~` in the subtitle, relative time via a pure formatter (`"just now"`, `"12 s ago"`, `"3 min ago"`, `"2 h ago"`).
 
-- [ ] **Step 1: Write the failing tests** — `EventRowModelTests`: `deniedEventShowsBlockedBadge`, `allowedEventShowsOkBadge`, `subtitleReplacesHomeWithTilde`, `helperProcessUsesResponsibleName`, `relativeTimeBuckets` (0 s, 12 s, 3 min, 2 h), `unknownProcessNameFallsBack` (empty path → "Unknown process"); `scripts/test_tokens.py`: `test_check_fails_when_file_missing`, `test_check_passes_after_generation`, `test_generation_leaves_submodule_clean` (git status of `external/warden-core` unchanged).
+- [ ] **Step 1: Write the failing tests** — `EventRowModelTests`: `deniedEventShowsBlockedBadge`, `allowedEventShowsOkBadge`, `subtitleReplacesHomeWithTilde`, `helperProcessUsesResponsibleName`, `relativeTimeBuckets` (0 s, 12 s, 3 min, 2 h), `unknownProcessNameFallsBack` (empty path → "Unknown process"); `scripts/test_tokens.py`: `test_check_fails_when_file_missing`, `test_check_passes_after_generation`, `test_generation_leaves_submodule_clean` (git status of `external/guardian-core` unchanged).
 - [ ] **Step 2: Run to verify they fail** — `scripts/test.sh`, unittest → Expected: FAIL.
 - [ ] **Step 3: Implement** the script (run it once to create `Tokens.swift`; commit the generated file), the model and the components.
 - [ ] **Step 4: Run to verify they pass** — `scripts/test.sh`, `python3 -I -B scripts/tokens.py --check`, `scripts/build.sh` → Expected: PASS; open the previews in Xcode **[owner, optional]** and confirm light and dark render (Claude cannot view them).
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: add design tokens and SwiftUI components"`. After PR D merges, **ask the owner** to re-apply rulesets with the extra `tokens` check (`bootstrap-repo.sh warden-macos "<description>" macos-build macos-quality tokens`).
+- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: add design tokens and SwiftUI components"`. After PR D merges, **ask the owner** to re-apply rulesets with the extra `tokens` check (`bootstrap-repo.sh guardian-macos "<description>" macos-build macos-quality tokens`).
 
 ### Task 15: `AppStateStore` and ViewModels
 
 **Files:**
-- Create: `WardenApp/Sources/ViewModels/{AppStateStore,PopoverViewModel,SettingsViewModel,EventsViewModel,RelativeTime}.swift`, `WardenApp/Tests/{AppStateStoreTests,PopoverViewModelTests,SettingsViewModelTests,EventsViewModelTests}.swift`
+- Create: `GuardianApp/Sources/ViewModels/{AppStateStore,PopoverViewModel,SettingsViewModel,EventsViewModel,RelativeTime}.swift`, `GuardianApp/Tests/{AppStateStoreTests,PopoverViewModelTests,SettingsViewModelTests,EventsViewModelTests}.swift`
 
 **Interfaces:**
 - Consumes: `SyncState`, `ExtensionState`, `ExtensionManaging`, `PolicySyncService`, `SettingsStoring`, `SecretStoring`, `AgentSettings.validate`, `EventRowModel`, `ExtensionLinking.liveEvents`.
@@ -343,14 +345,14 @@ Test targets: `CoreBridgeTests`, `DlpExtensionTests` (compiles `Shared/**` + `Dl
 ### Task 16: Views, scenes and app wiring
 
 **Files:**
-- Create: `WardenApp/Sources/Views/{PopoverView,SettingsView,EventsWindowView}.swift`, `WardenApp/Sources/Entry/AppEnvironment.swift`
-- Modify: `WardenApp/Sources/Entry/WardenApp.swift` (replace the Task 13 temporary items)
+- Create: `GuardianApp/Sources/Views/{PopoverView,SettingsView,EventsWindowView}.swift`, `GuardianApp/Sources/Entry/AppEnvironment.swift`
+- Modify: `GuardianApp/Sources/Entry/GuardianApp.swift` (replace the Task 13 temporary items)
 
 **Interfaces:**
 - Consumes: everything above.
-- Produces: `PopoverView` per mockup A (`StatusHeader`, policy line + "Sync now" `WDButton`, up to five `EventRow`s, footer "All events…" / "Settings"); `SettingsView` (server URL, `SecureField` token, pin, validation messages, Save, Install/Uninstall extension, extension state line); `EventsWindowView` (list + "Blocked only" toggle). `@main struct WardenApp: App` — `MenuBarExtra { PopoverView } label: { Image(systemName: "shield.lefthalf.filled") }` with `.menuBarExtraStyle(.window)`, `Window("All events", id: "events")`, `Window("Settings", id: "settings")`. `AppEnvironment` (`@MainActor`) builds the real object graph: `UserDefaultsSettingsStore`, `KeychainSecretStore`, `PinnedURLSession`, `HTTPAgentAPI`, `ExtensionLink`, `PolicySyncService`, `EventUploader`, `ExtensionManager`, `BlockNotifier`, `AppStateStore`; starts the long-running services in `.task` of the app and cancels them on termination. Views contain no logic beyond bindings.
+- Produces: `PopoverView` per mockup A (`StatusHeader`, policy line + "Sync now" `WDButton`, up to five `EventRow`s, footer "All events…" / "Settings"); `SettingsView` (server URL, `SecureField` token, pin, validation messages, Save, Install/Uninstall extension, extension state line); `EventsWindowView` (list + "Blocked only" toggle). `@main struct GuardianApp: App` — `MenuBarExtra { PopoverView } label: { Image(systemName: "shield.lefthalf.filled") }` with `.menuBarExtraStyle(.window)`, `Window("All events", id: "events")`, `Window("Settings", id: "settings")`. `AppEnvironment` (`@MainActor`) builds the real object graph: `UserDefaultsSettingsStore`, `KeychainSecretStore`, `PinnedURLSession`, `HTTPAgentAPI`, `ExtensionLink`, `PolicySyncService`, `EventUploader`, `ExtensionManager`, `BlockNotifier`, `AppStateStore`; starts the long-running services in `.task` of the app and cancels them on termination. Views contain no logic beyond bindings.
 
-- [ ] **Step 1: Write the failing check.** Views and wiring have no unit tests (their logic lives in the tested ViewModels and services). Replace the stub `WardenApp.swift` body with references to `PopoverView`, `SettingsView`, `EventsWindowView`, `AppEnvironment`; run `scripts/build.sh` → Expected: FAIL (types missing).
+- [ ] **Step 1: Write the failing check.** Views and wiring have no unit tests (their logic lives in the tested ViewModels and services). Replace the stub `GuardianApp.swift` body with references to `PopoverView`, `SettingsView`, `EventsWindowView`, `AppEnvironment`; run `scripts/build.sh` → Expected: FAIL (types missing).
 - [ ] **Step 2: Implement** views and wiring.
 - [ ] **Step 3: Verify** — `scripts/lint.sh && scripts/test.sh && scripts/build.sh` → Expected: all green, no warnings. **[owner]** launches the built app on the host *without* activating the extension (UI check only: menu bar icon, popover, Settings validation, "Extension not installed" state) and reports with a screenshot; the extension is never installed on the host.
 - [ ] **Step 4: Commit** — `git add -A && git commit -m "feat: add menu bar popover, settings and events window"`.

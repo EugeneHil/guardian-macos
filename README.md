@@ -1,8 +1,8 @@
-# warden-macos
+# guardian-macos
 
-macOS agent of **Warden**, a lightweight Endpoint DLP. It denies opening protected files (secrets such as `.env` and `~/.ssh`) to processes on an admin-managed blocklist (browsers, AI apps, anything the admin adds). Decisions use metadata only; file contents are never inspected. The agent consists of a menu bar app (WardenApp), an Endpoint Security system extension (DlpExtension) and an Objective‑C++ bridge (CoreBridge) to the shared C++17 rule engine from [warden-core](external/warden-core). Policies live on a server and are pulled over pinned HTTPS. Failures fail open: the agent must never block the user's work.
+macOS agent of **Guardian**, a lightweight Endpoint DLP. It denies opening protected files (secrets such as `.env` and `~/.ssh`) to processes on an admin-managed blocklist (browsers, AI apps, anything the admin adds). Decisions use metadata only; file contents are never inspected. The agent consists of a menu bar app (GuardianApp), an Endpoint Security system extension (DlpExtension) and an Objective‑C++ bridge (CoreBridge) to the shared C++17 rule engine from [guardian-core](https://github.com/EugeneHil/guardian-core). Policies live on a server and are pulled over pinned HTTPS. Failures fail open: the agent must never block the user's work.
 
-- Design: [docs/superpowers/specs/2026-10-20-warden-design.md](docs/superpowers/specs/2026-10-20-warden-design.md)
+- Design: [docs/superpowers/specs/2026-10-20-guardian-design.md](docs/superpowers/specs/2026-10-20-guardian-design.md)
 - Plans: [docs/superpowers/plans/](docs/superpowers/plans/)
 - Decisions: [docs/adr/](docs/adr/)
 - End-to-end checklist: [docs/e2e-checklist.md](docs/e2e-checklist.md)
@@ -12,7 +12,7 @@ macOS agent of **Warden**, a lightweight Endpoint DLP. It denies opening protect
 ```mermaid
 flowchart LR
   subgraph Mac["Mac (VM for ES debugging)"]
-    subgraph App["WardenApp (SwiftUI, menu bar)"]
+    subgraph App["GuardianApp (SwiftUI, menu bar)"]
       Sync["PolicySync (HTTPS + SPKI pin)"]
       Up["EventUploader"]
       Link["XPC client"]
@@ -24,9 +24,9 @@ flowchart LR
       Bridge["CoreBridge (Obj-C++)"]
     end
     Kernel["Endpoint Security"]
-    Core["warden-core (C++17 rule engine)"]
+    Core["guardian-core (C++17 rule engine)"]
   end
-  Server["WardenServer (Windows VPS, HTTPS :8443)"]
+  Server["GuardianServer (Windows VPS, HTTPS :8443)"]
   Kernel <--> ES
   ES --> Bridge --> Core
   ES --> Queue
@@ -45,7 +45,7 @@ Endpoint Security needs a restricted entitlement that only a paid Apple account 
 
 1. Prepare the guest as in [docs/vm-setup.md](docs/vm-setup.md) (snapshot `es-ready`, at least 2 vCPU).
 2. On the host, build and ad-hoc sign: `scripts/build.sh`.
-3. Copy `build/Build/Products/Debug/WardenApp.app` into the guest's `/Applications`.
+3. Copy `build/Build/Products/Debug/GuardianApp.app` into the guest's `/Applications`.
 4. Launch it, install the extension, approve it in System Settings (Login Items & Extensions) and grant Full Disk Access as described in [docs/vm-setup.md](docs/vm-setup.md). Whether the app (as opposed to the extension) strictly needs it is confirmed in ADR-0001 after the VM run.
 5. In Settings enter the server URL, the SPKI pin and the agent token (from the password manager; never commit them).
 
@@ -58,25 +58,25 @@ Requires Xcode 27 and [mise](https://mise.jdx.dev) (pins Tuist), plus `swiftlint
 ```sh
 mise install            # Tuist 4.212.0
 scripts/build.sh        # tuist generate, unsigned xcodebuild into build/, then ad-hoc sign (ADR-0001)
-scripts/test.sh         # unit tests for DlpExtensionTests and WardenAppTests (--coverage adds coverage)
+scripts/test.sh         # unit tests for DlpExtensionTests and GuardianAppTests (--coverage adds coverage)
 scripts/coverage.sh     # tests with coverage, then the >= 80 % line gate (scripts/coverage_gate.py)
 scripts/lint.sh         # swiftlint --strict and swiftformat --lint
 ```
 
 ## Diagnostics
 
-The extension writes timing and counter summaries to the unified log once a minute (only when something changed): subsystem `io.github.eugenehil.warden`, category `diag`. Only numbers and fixed words are logged, never paths or identities.
+The extension writes timing and counter summaries to the unified log once a minute (only when something changed): subsystem `io.github.eugenehil.guardian`, category `diag`. Only numbers and fixed words are logged, never paths or identities.
 
 ```sh
-log show --last 10m --info --debug --predicate 'subsystem == "io.github.eugenehil.warden" && category == "diag"'
+log show --last 10m --info --debug --predicate 'subsystem == "io.github.eugenehil.guardian" && category == "diag"'
 ```
 
 `.debug` lines add per-candidate detail (opener and responsible pid and pid version); see `docs/e2e-checklist.md`.
 
-Debug lines are not persisted by default. To see them afterwards, run `sudo log config --subsystem io.github.eugenehil.warden --mode "level:debug,persist:debug"` before the run (undo with `sudo log config --subsystem io.github.eugenehil.warden --reset`) and add `--debug` to `log show`. To watch them live:
+Debug lines are not persisted by default. To see them afterwards, run `sudo log config --subsystem io.github.eugenehil.guardian --mode "level:debug,persist:debug"` before the run (undo with `sudo log config --subsystem io.github.eugenehil.guardian --reset`) and add `--debug` to `log show`. To watch them live:
 
 ```sh
-log stream --level debug --predicate 'subsystem == "io.github.eugenehil.warden" && category == "diag"'
+log stream --level debug --predicate 'subsystem == "io.github.eugenehil.guardian" && category == "diag"'
 ```
 
 ## Limitations
