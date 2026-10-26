@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import os
 import Security
 
 /// Resolves the code-signing identity of a live process (the responsible process of an `AUTH_OPEN`).
@@ -24,12 +25,34 @@ final class SecurityProcessResolver: ProcessResolving {
 
     private let cache = ProcessIdentityCache()
     private let inspector = Inspector()
+    private let diagnostics: DiagnosticsRecorder
+    /// `.debug` detail per lookup (numbers and fixed words only), for the per-binary-kind latency check.
+    private let diagLog: Logger
+
+    init(diagnostics: DiagnosticsRecorder, diagLog: Logger) {
+        self.diagnostics = diagnostics
+        self.diagLog = diagLog
+    }
 
     func identity(of token: ProcessToken) async -> ProcessIdentity? {
-        if let hit = cache.lookup(token) {
-            return hit
+        let started = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        let hit = cache.lookup(token)
+        let identity: ProcessIdentity? = if let hit {
+            hit
+        } else {
+            await inspector.lookUp(token, in: self)
         }
-        return await inspector.lookUp(token, in: self)
+        let nanoseconds = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) &- started
+        let metric: DiagnosticMetric = hit != nil ? .lookupCached : (identity != nil ? .lookupResolved : .lookupFailed)
+        diagnostics.record(metric, nanoseconds: nanoseconds)
+        if hit == nil, let identity {
+            diagnostics.increment(identity.teamId.isEmpty ? .resolvedTeamIdEmpty : .resolvedTeamIdPresent)
+        }
+        diagLog.debug("""
+        lookup outcome=\(metric.label, privacy: .public) durationUs=\(nanoseconds / 1000, privacy: .public) \
+        teamIdEmpty=\(identity?.teamId.isEmpty ?? true, privacy: .public)
+        """)
+        return identity
     }
 
     /// Code object first (bound to the exact process instance when the audit token is known), then the path by pid,
