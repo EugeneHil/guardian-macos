@@ -52,13 +52,22 @@ one is not replaced. The Keychain item, the app's settings and its data live und
 
 1. Open the old app and deactivate its extension (or remove it from System Settings → General → Login Items &
    Extensions), then delete the old app from `/Applications` and reboot the guest.
-2. `systemextensionsctl list` must show only the new extension (`io.github.eugenehil.guardian.ext`). An entry of the
-   previous bundle id, even "terminated waiting to uninstall on reboot", means the reboot has not happened yet.
-3. Delete what the previous build left on disk. List it first, then remove what the listing shows:
-   `ls -d ~/Library/Application\ Support/io.github.eugenehil.* /Library/Application\ Support/*/policy.json`
-   Keep the `Guardian` directory and the entry of the new bundle id; remove the others with `rm -r` (the policy
-   directory needs `sudo`).
-4. Open the new app from `/Applications`, approve the extension again, and enter the token.
+2. `systemextensionsctl list` must show no entry with the previous bundle id. An entry such as "terminated waiting to
+   uninstall on reboot" means the reboot has not happened yet.
+3. Delete what the previous build left on disk. `<old id>` below is the previous bundle id: the name of the old
+   `.app`'s `CFBundleIdentifier`, or whatever the first listing shows. Each command is separate because zsh aborts a
+   line when one of its globs matches nothing.
+   - Find the old data: `ls -d ~/Library/Application\ Support/io.github.eugenehil.*`
+     and `ls -d ~/Library/Preferences/io.github.eugenehil.*`
+     and `ls -d /Library/Application\ Support/*/policy.json` (the new `Guardian` directory is created at step 4,
+     so only the previous build's directory is listed now).
+   - Remove them: `rm -r ~/Library/Application\ Support/<old id>`, `rm ~/Library/Preferences/<old id>.plist`,
+     and `sudo rm -r` on the directory that holds the old `policy.json`.
+   - Check, then delete the old Keychain item with the stale token (never add `-w` or `-g`, they print the secret):
+     `security find-generic-password -s '<old id>.agent-token'`, then
+     `security delete-generic-password -s '<old id>.agent-token'`.
+4. Open the new app from `/Applications`, approve the extension again, and enter the token. Now
+   `systemextensionsctl list` must show only `io.github.eugenehil.guardian.ext` as `[activated enabled]`.
 
 ## Notes
 
