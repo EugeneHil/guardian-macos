@@ -1,8 +1,8 @@
 import ProjectDescription
 
 // Identifiers are duplicated from Shared/BundleIDs.swift; BundleIDsTests keeps them consistent.
-let appID = "io.github.eugenehil.warden"
-let extID = "io.github.eugenehil.warden.ext"
+let appID = "io.github.eugenehil.guardian"
+let extID = "io.github.eugenehil.guardian.ext"
 
 /// Ad-hoc signing per ADR-0001: Xcode never signs; scripts/sign.sh signs inside-out with codesign.
 let adhoc: SettingsDictionary = [

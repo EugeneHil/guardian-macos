@@ -212,6 +212,6 @@ final class ExtensionLinkTests: XCTestCase {
     }
 
     func testPeerRequirementPinsExtensionIdentifier() {
-        XCTAssertEqual(MachServiceConnector.peerRequirement(), #"identifier "io.github.eugenehil.warden.ext""#)
+        XCTAssertEqual(MachServiceConnector.peerRequirement(), #"identifier "io.github.eugenehil.guardian.ext""#)
     }
 }

@@ -5,6 +5,8 @@ final class BundleIDsTests: XCTestCase {
     func testBundleIDsAreConsistent() throws {
         XCTAssertEqual(BundleIDs.ext, BundleIDs.app + ".ext")
         XCTAssertTrue(BundleIDs.machService.hasPrefix(BundleIDs.appGroup))
+        XCTAssertEqual(BundleIDs.machService, "io.github.eugenehil.guardian.ext")
+        XCTAssertEqual(DataPaths.policyFile, "/Library/Application Support/Guardian/policy.json")
 
         // #filePath = <root>/DlpExtension/Tests/BundleIDsTests.swift; Info.plist lives two levels up.
         let plistURL = URL(fileURLWithPath: #filePath)
