@@ -73,6 +73,12 @@ log show --last 10m --info --debug --predicate 'subsystem == "io.github.eugenehi
 
 `.debug` lines add per-candidate detail (opener and responsible pid and pid version); see `docs/e2e-checklist.md`.
 
+Debug lines are not persisted by default. To see them afterwards, run `sudo log config --subsystem io.github.eugenehil.warden --mode "level:debug,persist:debug"` before the run (undo with `sudo log config --subsystem io.github.eugenehil.warden --reset`) and add `--debug` to `log show`. To watch them live:
+
+```sh
+log stream --level debug --predicate 'subsystem == "io.github.eugenehil.warden" && category == "diag"'
+```
+
 ## Limitations
 
 From [ADR-0001](docs/adr/0001-adhoc-signed-es-extension.md) and the v0.1 design:
