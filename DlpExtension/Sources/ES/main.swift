@@ -24,12 +24,16 @@ let controllerLog: @Sendable (String) -> Void = { line in
 let holder = PolicyHolder()
 let store = PolicyStore(fileURL: URL(fileURLWithPath: "/Library/Application Support/Warden/policy.json"))
 let queue = EventQueue()
-let resolver = SecurityProcessResolver()
+let diagnostics = DiagnosticsRecorder()
+let diagLogger = Logger(subsystem: BundleIDs.app, category: "diag")
+let resolver = SecurityProcessResolver(diagnostics: diagnostics, diagLog: diagLogger)
 let coordinator = OpenCoordinator(holder: holder, resolver: resolver, events: queue, log: coordinatorLog)
 
 let esClient: EndpointSecurityClient
 do {
-    esClient = try EndpointSecurityClient(coordinator: coordinator, log: logger)
+    esClient = try EndpointSecurityClient(
+        coordinator: coordinator, diagnostics: diagnostics, diagLog: diagLogger, log: logger
+    )
 } catch let EndpointSecurityClientError.newClient(result) {
     let reason = EndpointSecurityClient.describe(result)
     logger.fault("could not create the Endpoint Security client: \(reason, privacy: .public)")
@@ -37,6 +41,11 @@ do {
 } catch {
     logger.fault("could not start the Endpoint Security client: \(String(describing: error), privacy: .public)")
     exit(EXIT_FAILURE)
+}
+
+/// Cumulative timing and counter summary once a minute, only when something changed (checklist items 5, 6, 7, 13).
+let diagnosticsSummary = Task {
+    await diagnostics.logPeriodically { diagLogger.notice("\($0, privacy: .public)") }
 }
 
 let controller = PolicyController(holder: holder, store: store, cache: esClient, log: controllerLog)

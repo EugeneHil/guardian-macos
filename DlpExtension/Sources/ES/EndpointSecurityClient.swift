@@ -16,6 +16,10 @@ private struct RetainedMessage: @unchecked Sendable {
     let client: OpaquePointer
     let message: UnsafePointer<es_message_t>
     let log: Logger
+    let diagnostics: DiagnosticsRecorder
+    let timebase: (numer: UInt32, denom: UInt32)
+    /// `mach_absolute_time()` at handler entry.
+    let enteredAt: UInt64
 
     /// Answers and releases; `OpenCoordinator` guarantees exactly one call per message.
     func respond(_ response: OpenResponse) {
@@ -23,6 +27,11 @@ private struct RetainedMessage: @unchecked Sendable {
         let flags: UInt32 = response == .allow ? UInt32.max : 0
         let result = es_respond_flags_result(client, message, flags, false)
         es_release_message(message)
+        let ticks = mach_absolute_time() &- enteredAt
+        diagnostics.record(
+            response == .allow ? .candidateAllow : .candidateDeny,
+            nanoseconds: ESDeadline.nanoseconds(ticks: ticks, timebase: timebase)
+        )
         if result != ES_RESPOND_RESULT_SUCCESS {
             log.error("es_respond_flags_result failed: \(result.rawValue, privacy: .public)")
         }
@@ -35,6 +44,9 @@ private struct HandlerContext: Sendable {
     let cache: CacheClearScheduler
     let timebase: (numer: UInt32, denom: UInt32)
     let log: Logger
+    let diagnostics: DiagnosticsRecorder
+    /// Per-candidate detail for the pid-reuse check; `.debug` level, so it costs nothing while disabled.
+    let diagLog: Logger
 }
 
 /// Holds the `es_client_t` once it exists. The lock serializes the kernel calls made through it (cache clears from
@@ -80,7 +92,9 @@ final class EndpointSecurityClient: CacheClearing, Sendable {
     private let slot: ClientSlot
     private let scheduler: CacheClearScheduler
 
-    init(coordinator: OpenCoordinator, log: Logger) throws {
+    init(
+        coordinator: OpenCoordinator, diagnostics: DiagnosticsRecorder, diagLog: Logger, log: Logger
+    ) throws {
         let slot = ClientSlot()
         let scheduler = CacheClearScheduler(
             log: { log.notice("\($0, privacy: .public)") }, clear: { slot.clear() }
@@ -92,7 +106,8 @@ final class EndpointSecurityClient: CacheClearing, Sendable {
             timebase = mach_timebase_info_data_t(numer: 0, denom: 0) // ESDeadline answers such events at once
         }
         let context = HandlerContext(
-            coordinator: coordinator, cache: scheduler, timebase: (timebase.numer, timebase.denom), log: log
+            coordinator: coordinator, cache: scheduler, timebase: (timebase.numer, timebase.denom), log: log,
+            diagnostics: diagnostics, diagLog: diagLog
         )
         var created: OpaquePointer?
         let result = es_new_client(&created) { client, message in
@@ -169,11 +184,22 @@ final class EndpointSecurityClient: CacheClearing, Sendable {
             es_respond_auth_result(client, message, ES_AUTH_RESULT_ALLOW, false)
             return
         }
+        // The first of the two clock reads this handler adds (the second follows the response).
+        let enteredAt = mach_absolute_time()
+        let margin = ESDeadline.unclampedNanoseconds(
+            deadline: message.pointee.deadline, now: enteredAt, timebase: context.timebase
+        )
         let token = message.pointee.event.open.file.pointee.path
         let path = UnsafeRawBufferPointer(start: token.data, count: token.data == nil ? 0 : token.length)
         let decision = coordinator.fastPathDecision(path)
         if decision.allows {
             es_respond_flags_result(client, message, UInt32.max, true)
+            context.diagnostics.recordFastPath(
+                marginNanoseconds: margin,
+                durationNanoseconds: ESDeadline.nanoseconds(
+                    ticks: mach_absolute_time() &- enteredAt, timebase: context.timebase
+                )
+            )
             // A policy activated between the check and the response may cover this path: drop the cached allow.
             // Only a request: the kernel call (rate limited) runs on the scheduler task, never on this thread.
             if coordinator.policyGeneration != decision.generation {
@@ -181,12 +207,38 @@ final class EndpointSecurityClient: CacheClearing, Sendable {
             }
             return
         }
-        // Read the clock before any string is built so the decoding time counts against the deadline.
+        context.diagnostics.record(.deadlineMargin, nanoseconds: margin)
+        submitCandidate(client: client, message: message, path: path, enteredAt: enteredAt, context: context)
+    }
+
+    /// Builds the request for a path the fast path did not allow and hands it to the coordinator.
+    private static func submitCandidate(
+        client: OpaquePointer, message: UnsafePointer<es_message_t>, path: UnsafeRawBufferPointer,
+        enteredAt: UInt64, context: HandlerContext
+    ) {
+        // The entry time was read before any string is built, so the decoding time counts against the deadline.
         let remaining = ESDeadline.remaining(
-            deadline: message.pointee.deadline, now: mach_absolute_time(), timebase: context.timebase
+            deadline: message.pointee.deadline, now: enteredAt, timebase: context.timebase
         )
         let process = message.pointee.process.pointee
-        let responsible = message.pointee.version >= 4 ? processToken(process.responsible_audit_token) : nil
+        let hasResponsible = message.pointee.version >= 4
+        let responsible = hasResponsible ? processToken(process.responsible_audit_token) : nil
+        let opener = processToken(process.audit_token)
+        let responsibleIsOpener = responsible != nil && responsible == opener
+        if hasResponsible {
+            context.diagnostics.increment(responsible == nil ? .responsibleTokenZero : .responsibleTokenSet)
+        }
+        if responsibleIsOpener {
+            context.diagnostics.increment(.responsibleIsOpener)
+        }
+        // Numbers only; the interpolation is not evaluated while debug logging is off.
+        context.diagLog.debug("""
+        candidate openerPid=\(opener?.pid ?? 0, privacy: .public) \
+        openerPidVersion=\(opener?.pidVersion ?? 0, privacy: .public) \
+        responsiblePid=\(responsible?.pid ?? 0, privacy: .public) \
+        responsiblePidVersion=\(responsible?.pidVersion ?? 0, privacy: .public) \
+        responsibleIsOpener=\(responsibleIsOpener, privacy: .public)
+        """)
         let request = OpenRequest(
             file: OpenCoordinator.decodePath(path),
             process: ProcessIdentity(
@@ -196,11 +248,14 @@ final class EndpointSecurityClient: CacheClearing, Sendable {
             responsible: responsible,
             remaining: remaining,
             // Usually the opener is its own responsible process: use its kernel-sourced identity, no lookup.
-            responsibleIsProcess: responsible != nil && responsible == processToken(process.audit_token)
+            responsibleIsProcess: responsibleIsOpener
         )
         es_retain_message(message)
-        let retained = RetainedMessage(client: client, message: message, log: context.log)
-        coordinator.handleCandidate(request) { retained.respond($0) }
+        let retained = RetainedMessage(
+            client: client, message: message, log: context.log, diagnostics: context.diagnostics,
+            timebase: context.timebase, enteredAt: enteredAt
+        )
+        context.coordinator.handleCandidate(request) { retained.respond($0) }
     }
 
     /// Lossy UTF-8; an absent token is the empty string ("absent" in `ProcessIdentity`).
