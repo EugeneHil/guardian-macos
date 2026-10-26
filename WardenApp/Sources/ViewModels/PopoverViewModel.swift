@@ -44,15 +44,21 @@ final class PopoverViewModel {
         switch store.syncState {
         case let .synced(version, syncedAt):
             "Policy v\(version) · synced \(RelativeTime.string(from: syncedAt, now: now()))"
-        case let .unreachable(lastVersion?):
-            "Policy v\(lastVersion) · server unreachable"
+        case let .unreachable(lastVersion?, reason):
+            "Policy v\(lastVersion) · \(reason == .pinMismatch ? "certificate pin mismatch" : "server unreachable")"
+        case .unreachable(nil, .pinMismatch):
+            "Certificate pin mismatch"
         case .unauthorized:
             "Check agent token"
         case let .extensionUnavailable(version) where version > 0:
             "Policy v\(version) · extension unavailable"
+        case let .policyRejected(version) where version > 0:
+            "Policy v\(version) · new policy rejected"
+        case .policyRejected:
+            "Policy rejected by extension"
         case .throttled:
             "Server busy · retrying"
-        case .notConfigured, .idle, .unreachable(nil), .extensionUnavailable:
+        case .notConfigured, .idle, .unreachable(nil, _), .extensionUnavailable:
             "No policy yet"
         }
     }

@@ -13,7 +13,7 @@ final class AppStateStore {
     private(set) var events: [AccessEvent] = []
     /// The last policy version the extension is known to enforce. Updated by `.synced` and by `.unreachable`
     /// with a version; kept across throttled, unauthorized, idle and not-configured transitions. An
-    /// `.extensionUnavailable` state never updates it: the extension did not receive that policy.
+    /// `.extensionUnavailable` or `.policyRejected` state never updates it: the extension did not receive that policy.
     private(set) var lastPolicyVersion: Int64?
 
     @ObservationIgnored let now: @Sendable () -> Date
@@ -50,7 +50,7 @@ final class AppStateStore {
             syncState = state
             switch state {
             case let .synced(version, _): lastPolicyVersion = version
-            case let .unreachable(lastVersion?): lastPolicyVersion = lastVersion
+            case let .unreachable(lastVersion?, _): lastPolicyVersion = lastVersion
             default: break
             }
         }

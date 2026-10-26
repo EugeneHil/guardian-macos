@@ -105,12 +105,12 @@ final class PolicySyncServiceTests: XCTestCase {
         await rig.service.syncNow()
         await rig.service.syncNow()
         var state = await rig.service.state
-        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+        XCTAssertEqual(state, .policyRejected(version: 1))
         await rig.service.syncNow()
         XCTAssertEqual(rig.link.applied, [Self.body(1), Self.body(2)], "the rejected policy must not be re-pushed")
         XCTAssertEqual(rig.api.fetchEtags, [nil, "\"v1\"", "\"v1\""], "the last good ETag stays")
         state = await rig.service.state
-        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+        XCTAssertEqual(state, .policyRejected(version: 1))
         await rig.service.syncNow()
         XCTAssertEqual(rig.link.applied, [Self.body(1), Self.body(2), Self.body(3)])
         state = await rig.service.state
@@ -128,12 +128,12 @@ final class PolicySyncServiceTests: XCTestCase {
         await rig.service.syncNow()
         XCTAssertEqual(rig.link.applied, [Self.body(1), Self.body(2), Self.body(1)])
         var state = await rig.service.state
-        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+        XCTAssertEqual(state, .policyRejected(version: 1))
         rig.link.setCurrentVersion(.success(1))
         await rig.service.syncNow()
         XCTAssertEqual(rig.link.applied.count, 3, "the rejected body is never resent")
         state = await rig.service.state
-        XCTAssertEqual(state, .extensionUnavailable(version: 1))
+        XCTAssertEqual(state, .policyRejected(version: 1))
     }
 
     func testRejectedRepushOfGoodBodyDoesNotPoisonEtag() async {
@@ -159,7 +159,7 @@ final class PolicySyncServiceTests: XCTestCase {
         await rig.service.syncNow()
         await rig.service.syncNow()
         let state = await rig.service.state
-        XCTAssertEqual(state, .unreachable(lastVersion: 2))
+        XCTAssertEqual(state, .unreachable(lastVersion: 2, reason: .serverError))
         XCTAssertEqual(rig.link.applyCalls.count, 1)
     }
 
@@ -169,7 +169,7 @@ final class PolicySyncServiceTests: XCTestCase {
         await rig.service.syncNow()
         await rig.service.syncNow()
         let state = await rig.service.state
-        XCTAssertEqual(state, .unreachable(lastVersion: 2))
+        XCTAssertEqual(state, .unreachable(lastVersion: 2, reason: .other))
         XCTAssertEqual(rig.link.applied, [Self.body(2)])
     }
 
@@ -178,7 +178,7 @@ final class PolicySyncServiceTests: XCTestCase {
         rig.api.script(.failure(.transport))
         await rig.service.syncNow()
         let state = await rig.service.state
-        XCTAssertEqual(state, .unreachable(lastVersion: nil))
+        XCTAssertEqual(state, .unreachable(lastVersion: nil, reason: .transport))
     }
 
     func testNotConfiguredState() async {
@@ -288,7 +288,7 @@ extension PolicySyncServiceTests {
         await rig.service.syncNow()
         await rig.service.syncNow()
         let state = await rig.service.state
-        XCTAssertEqual(state, .unreachable(lastVersion: 3))
+        XCTAssertEqual(state, .unreachable(lastVersion: 3, reason: .serverError))
         XCTAssertEqual(rig.link.applyCalls.count, 0)
         XCTAssertEqual(rig.link.currentVersionCalls.count, 1, "the extension is asked once")
     }
@@ -300,7 +300,7 @@ extension PolicySyncServiceTests {
         await rig.service.syncNow()
         await rig.service.syncNow()
         let state = await rig.service.state
-        XCTAssertEqual(state, .unreachable(lastVersion: nil))
+        XCTAssertEqual(state, .unreachable(lastVersion: nil, reason: .pinMismatch))
         XCTAssertEqual(rig.link.currentVersionCalls.count, 1, "the extension is asked once")
     }
 
@@ -310,7 +310,34 @@ extension PolicySyncServiceTests {
         rig.api.script(.failure(.malformedResponse))
         await rig.service.syncNow()
         let state = await rig.service.state
-        XCTAssertEqual(state, .unreachable(lastVersion: nil))
+        XCTAssertEqual(state, .unreachable(lastVersion: nil, reason: .other))
         XCTAssertEqual(rig.link.applyCalls.count, 0)
+    }
+}
+
+// MARK: - Unreachable reason
+
+extension PolicySyncServiceTests {
+    func testEachAPIErrorMapsToItsUnreachableReason() async {
+        let cases: [(AgentAPIError, UnreachableReason)] = [
+            (.pinMismatch, .pinMismatch), (.transport, .transport), (.server(500), .serverError),
+            (.invalidBatch, .other), (.payloadTooLarge, .other), (.malformedResponse, .other),
+        ]
+        for (error, reason) in cases {
+            let rig = Rig()
+            rig.api.script(.failure(error))
+            await rig.service.syncNow()
+            let state = await rig.service.state
+            XCTAssertEqual(state, .unreachable(lastVersion: nil, reason: reason), "\(error)")
+        }
+    }
+
+    func testReasonChangeProducesNewState() async {
+        let rig = Rig()
+        rig.api.script(.failure(.transport), .failure(.pinMismatch))
+        await rig.service.syncNow()
+        await rig.service.syncNow()
+        let state = await rig.service.state
+        XCTAssertEqual(state, .unreachable(lastVersion: nil, reason: .pinMismatch))
     }
 }

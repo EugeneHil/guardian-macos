@@ -51,13 +51,32 @@ final class PopoverViewModelTests: XCTestCase {
     }
 
     func testPolicyLineUnreachableKeepsVersion() async {
-        let model = await makeModel(sync: .unreachable(lastVersion: 2), ext: .active)
+        let model = await makeModel(sync: .unreachable(lastVersion: 2, reason: .transport), ext: .active)
         XCTAssertEqual(model.policyLine, "Policy v2 · server unreachable")
         XCTAssertTrue(model.isProtectionActive)
     }
 
+    func testPolicyLinePinMismatchWithVersion() async {
+        let model = await makeModel(sync: .unreachable(lastVersion: 2, reason: .pinMismatch), ext: .active)
+        XCTAssertEqual(model.policyLine, "Policy v2 · certificate pin mismatch")
+        XCTAssertTrue(model.isProtectionActive)
+    }
+
+    func testPolicyLinePinMismatchWithoutVersion() async {
+        let model = await makeModel(sync: .unreachable(lastVersion: nil, reason: .pinMismatch), ext: .active)
+        XCTAssertEqual(model.policyLine, "Certificate pin mismatch")
+        XCTAssertFalse(model.isProtectionActive)
+    }
+
+    func testPolicyLineOtherReasonsStayServerUnreachable() async {
+        for reason in [UnreachableReason.transport, .serverError, .other] {
+            let model = await makeModel(sync: .unreachable(lastVersion: 2, reason: reason), ext: .active)
+            XCTAssertEqual(model.policyLine, "Policy v2 · server unreachable")
+        }
+    }
+
     func testPolicyLineWithoutPolicy() async {
-        let none = await makeModel(sync: .unreachable(lastVersion: nil), ext: .active)
+        let none = await makeModel(sync: .unreachable(lastVersion: nil, reason: .transport), ext: .active)
         XCTAssertEqual(none.policyLine, "No policy yet")
         XCTAssertFalse(none.isProtectionActive)
         let idle = await makeModel(sync: .idle, ext: .active)
@@ -116,6 +135,30 @@ final class PopoverViewModelTests: XCTestCase {
         XCTAssertEqual(model.policyLine, "No policy yet")
     }
 
+    func testPolicyRejectedShowsVersionOfLastAppliedPolicy() async {
+        let model = await makeModel(syncs: [.policyRejected(version: 3)], ext: .active)
+        XCTAssertEqual(model.policyLine, "Policy v3 · new policy rejected")
+    }
+
+    func testPolicyRejectedWithoutAppliedPolicy() async {
+        let model = await makeModel(syncs: [.policyRejected(version: 0)], ext: .active)
+        XCTAssertEqual(model.policyLine, "Policy rejected by extension")
+    }
+
+    func testPolicyRejectedNeverCountsAsPolicy() async {
+        let model = await makeModel(syncs: [.policyRejected(version: 3)], ext: .active)
+        XCTAssertFalse(model.isProtectionActive)
+        let afterSync = await makeModel(
+            syncs: [.synced(version: 2, at: now), .policyRejected(version: 2)], ext: .active
+        )
+        XCTAssertTrue(afterSync.isProtectionActive)
+    }
+
+    func testNoFullDiskAccessHintOnPolicyRejection() async {
+        let model = await makeModel(sync: .policyRejected(version: 2), ext: .active)
+        XCTAssertNil(model.fullDiskAccessHint)
+    }
+
     func testRecentRowsAreFiveNewest() async {
         let events = (0 ..< 8).map { EventFixture.make(age: Double(8 - $0)) }
         let model = await makeModel(sync: .idle, ext: .active, events: events)
@@ -151,7 +194,7 @@ final class PopoverViewModelTests: XCTestCase {
     }
 
     func testUnreachableWithExtensionVersionShowsProtectionActive() async {
-        let model = await makeModel(syncs: [.unreachable(lastVersion: 3)], ext: .active)
+        let model = await makeModel(syncs: [.unreachable(lastVersion: 3, reason: .serverError)], ext: .active)
         XCTAssertTrue(model.isProtectionActive)
         XCTAssertEqual(model.statusTitle, "Protection active")
         XCTAssertEqual(model.policyLine, "Policy v3 · server unreachable")

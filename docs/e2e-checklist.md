@@ -72,7 +72,7 @@ XPC and app state:
 - [ ] 18. A rejected policy arrives as `invalidPolicy`, not `unavailable`: it is not re-pushed every 10 s. **Result:** NOT RUN: the server cannot serve an invalid policy; covered by unit tests (`invalidPolicy` as a reply error, `rejectedETag`).
 - [x] 19. `lastPolicyVersion` and "Protection active" are correct after an extension restart (the policy is re-pushed on version mismatch). **Result:** PASS: observed implicitly in acceptance step 5 and section 6 (after an extension restart the app showed the cached version).
 - [x] 20. The UI after a relaunch with the server down shows the cached policy. **Result:** PASS: observed implicitly in acceptance step 5 and section 6 (cached version shown with the server stopped).
-- [ ] 21. The Full Disk Access hint appears when the extension is activated but XPC is unreachable, including during the `kill -9` restart. Known: it also shows on policy rejection (carry 29; no distinct state yet). **Result:** NOT RUN: Full Disk Access is not needed in this VM, so the hint is not reproducible.
+- [ ] 21. The Full Disk Access hint appears when the extension is activated but XPC is unreachable, including during the `kill -9` restart. It no longer shows on policy rejection (the extension rejecting a policy is a separate state). **Result:** NOT RUN: Full Disk Access is not needed in this VM, so the hint is not reproducible.
 
 Server link and secrets:
 
@@ -96,6 +96,16 @@ Settings and upload resilience:
 - [x] 32. Changing only the server URL or pin in Settings does not require re-entering the token when one is stored.
 - [x] 33. A backlog of 500+ events uploads in several batches and none is lost.
 
+Pending events and quit (v0.1.1):
+
+- [x] 34. With the server stopped, blocked accesses are drained from the extension and kept in `pending-events.json` under Application Support/<bundle id> with mode 0600, and quitting the app takes at most 3 s. **Result:** PASS (VM run on 2026-10-26, macOS 27 VM, app built from `develop` at 7d6c4b7, extension activated). The file was 515 bytes for the events of the run (five identical accesses collapsed to one event by the 5 s dedupe). Quit was immediate because the server was refused at once.
+- [x] 35. After the server is started again and the app reopened, the stored events are uploaded and `pending-events.json` disappears. **Result:** PASS (same run). The event is visible in the admin panel. Restored events do not appear in the app's local "All events" list, which shows only events drained in the current run (expected).
+- [x] 36. With the server stopped the popover reads "Policy vN · server unreachable" (not "certificate pin mismatch"). **Result:** PASS (same run).
+
+Limitation: the 3 s timeout path with a hanging (not refused) server was not exercised in the VM; it is covered by the `flushWithTimeout` unit tests.
+
+Note: after a VM reboot the replaced extension build had to be reinstalled and approved again in System Settings (old copies stay "terminated waiting to uninstall on reboot"), and the legacy keychain asked for access twice because the ad-hoc signature changes with each build. Both are known consequences of ad-hoc signing (ADR-0001), not changes of this release.
+
 ## 8. Results
 
 Filled by the owner for each release. Each row cites the checklist item numbers (section 7 numbering) that passed or failed.
@@ -103,3 +113,4 @@ Filled by the owner for each release. Each row cites the checklist item numbers 
 | Date | Build (commit/tag) | Pass/fail | Notes |
 |------|--------------------|-----------|-------|
 | 2026-10-24 | `develop` at e91bb4b plus this docs change | pass with noted gaps | Items 3, 5, 6, 7, 13, 18, 21 and 27 were not run, 12 and 16 are partial, 17 passed for the app process only (see the results in section 7). |
+| 2026-10-26 | `develop` at 7d6c4b7 (v0.1.1 candidate) | pass | Items 34-36 passed in the VM; the not-run items of the v0.1.0 row are unchanged. |

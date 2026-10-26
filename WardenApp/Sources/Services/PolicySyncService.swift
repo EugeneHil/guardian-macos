@@ -1,15 +1,25 @@
 import Foundation
 import os
 
+/// Why the server could not be reached; symbolic only, safe to log and show.
+enum UnreachableReason: Sendable, Equatable {
+    case pinMismatch
+    case transport
+    case serverError
+    case other
+}
+
 enum SyncState: Equatable, Sendable {
     case notConfigured
     case idle
     // swiftlint:disable:next identifier_name
     case synced(version: Int64, at: Date)
-    case unreachable(lastVersion: Int64?)
+    case unreachable(lastVersion: Int64?, reason: UnreachableReason)
     case unauthorized
     case throttled(until: Date)
     case extensionUnavailable(version: Int64)
+    /// The extension refused the new policy; `version` is the last applied one (0 if none).
+    case policyRejected(version: Int64)
 }
 
 /// Polls the server for the policy and keeps the extension's copy up to date.
@@ -81,8 +91,18 @@ actor PolicySyncService {
 
     private func set(_ newState: SyncState) {
         guard newState != state else { return }
+        if case let .unreachable(_, reason) = newState, !isUnreachable(with: reason) {
+            log.error("server unreachable: \(String(describing: reason), privacy: .public)")
+        }
         state = newState
         continuation.yield(newState)
+    }
+
+    private func isUnreachable(with reason: UnreachableReason) -> Bool {
+        guard case let .unreachable(_, current) = state else {
+            return false
+        }
+        return current == reason
     }
 
     private func syncOnce() async {
@@ -102,7 +122,7 @@ actor PolicySyncService {
             await handle(error)
         } catch {
             if !(error is CancellationError) {
-                set(.unreachable(lastVersion: appliedVersion))
+                set(.unreachable(lastVersion: appliedVersion, reason: .other))
             }
         }
     }
@@ -111,7 +131,7 @@ actor PolicySyncService {
         if newETag == rejectedETag {
             // The extension already refused this policy: keep the last good one alive, but do not resend the body.
             if await extensionHoldsLastGood() {
-                set(.extensionUnavailable(version: appliedVersion ?? 0))
+                set(.policyRejected(version: appliedVersion ?? 0))
             }
             return
         }
@@ -161,7 +181,7 @@ actor PolicySyncService {
         } catch let ExtensionLinkError.invalidPolicy(reasons) {
             log.error("extension rejected the policy (\(reasons.count) problems)")
             rejectedETag = newETag
-            set(.extensionUnavailable(version: appliedVersion ?? 0))
+            set(.policyRejected(version: appliedVersion ?? 0))
         } catch is CancellationError {
             return
         } catch {
@@ -183,7 +203,16 @@ actor PolicySyncService {
             set(.notConfigured)
         case .invalidBatch, .payloadTooLarge, .server, .transport, .pinMismatch, .malformedResponse:
             await adoptExtensionVersionIfUnknown()
-            set(.unreachable(lastVersion: appliedVersion))
+            set(.unreachable(lastVersion: appliedVersion, reason: Self.reason(for: error)))
+        }
+    }
+
+    private static func reason(for error: AgentAPIError) -> UnreachableReason {
+        switch error {
+        case .pinMismatch: .pinMismatch
+        case .transport: .transport
+        case .server: .serverError
+        default: .other
         }
     }
 
