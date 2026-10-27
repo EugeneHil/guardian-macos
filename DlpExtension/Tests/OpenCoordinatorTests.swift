@@ -264,7 +264,7 @@ final class OpenCoordinatorTests: XCTestCase {
         XCTAssertEqual(before.generation, holder.generation)
         XCTAssertEqual(coordinator.policyGeneration, holder.generation)
 
-        try holder.set(policy: WDPolicy(json: Data(Fixture.policy.utf8)))
+        try holder.set(policy: GDPolicy(json: Data(Fixture.policy.utf8)))
         XCTAssertNotEqual(coordinator.policyGeneration, before.generation)
         let after = path.withUTF8 { coordinator.fastPathDecision(UnsafeRawBufferPointer($0)) }
         XCTAssertFalse(after.allows)

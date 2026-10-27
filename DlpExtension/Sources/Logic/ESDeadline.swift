@@ -18,4 +18,22 @@ enum ESDeadline {
         guard nanoseconds < capNanoseconds else { return cap }
         return .nanoseconds(Int64(nanoseconds))
     }
+
+    /// `deadline - now` in nanoseconds, NOT clamped to `cap` (diagnostics: how generous the kernel deadline is).
+    /// Saturates at `UInt64.max` instead of overflowing; zero for a past deadline or an invalid timebase.
+    static func unclampedNanoseconds(
+        deadline: UInt64, now: UInt64, timebase: (numer: UInt32, denom: UInt32)
+    ) -> UInt64 {
+        guard deadline > now else { return 0 }
+        return nanoseconds(ticks: deadline - now, timebase: timebase)
+    }
+
+    /// `ticks * numer / denom`, saturating; zero for an invalid timebase.
+    static func nanoseconds(ticks: UInt64, timebase: (numer: UInt32, denom: UInt32)) -> UInt64 {
+        guard timebase.numer > 0, timebase.denom > 0 else { return 0 }
+        let product = ticks.multipliedFullWidth(by: UInt64(timebase.numer))
+        let denom = UInt64(timebase.denom)
+        guard product.high < denom else { return UInt64.max }
+        return denom.dividingFullWidth(product).quotient
+    }
 }

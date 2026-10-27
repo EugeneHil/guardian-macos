@@ -15,7 +15,7 @@ struct AccessEvent: Sendable, Codable, Equatable, Identifiable {
     var ruleId: String?
 }
 
-// MARK: - Server upload format (warden-server/docs/api.md, POST /api/v1/events)
+// MARK: - Server upload format (guardian-server/docs/api.md, POST /api/v1/events)
 
 extension AccessEvent {
     /// Server limit for every string, in UTF-8 bytes.

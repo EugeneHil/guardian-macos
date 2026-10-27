@@ -1,5 +1,7 @@
 # ADR-0003: App Transport Security disabled for the pinned transport
 
+> Formerly Warden.
+
 - Status: accepted
 - Date: 2026-10-23
 
@@ -9,7 +11,7 @@ The agent talks to a user-configured server that presents a self-signed certific
 
 ## Decision
 
-Set `NSAppTransportSecurity` -> `NSAllowsArbitraryLoads = true` in the WardenApp Info.plist (`Project.swift`). The DlpExtension Info.plist is unchanged. `AppInfoPlistTests` fails if the setting is dropped.
+Set `NSAppTransportSecurity` -> `NSAllowsArbitraryLoads = true` in the GuardianApp Info.plist (`Project.swift`). The DlpExtension Info.plist is unchanged. `AppInfoPlistTests` fails if the setting is dropped.
 
 ## Evidence
 

@@ -5,8 +5,8 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(ROOT, "scripts", "tokens.py")
-SWIFT = os.path.join(ROOT, "WardenApp", "Sources", "DesignSystem", "Tokens.swift")
-CORE = os.path.join(ROOT, "external", "warden-core")
+SWIFT = os.path.join(ROOT, "GuardianApp", "Sources", "DesignSystem", "Tokens.swift")
+CORE = os.path.join(ROOT, "external", "guardian-core")
 
 
 def run(*args):

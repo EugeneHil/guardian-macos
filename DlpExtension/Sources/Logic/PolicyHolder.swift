@@ -5,7 +5,7 @@ import Synchronization
 /// Lock-protected slot for the active policy engine, read from the synchronous Endpoint Security handler.
 final class PolicyHolder: Sendable {
     private struct State {
-        var engine: WDEngine?
+        var engine: GDEngine?
         var version: Int64 = 0
         var generation: UInt64 = 0
     }
@@ -13,8 +13,8 @@ final class PolicyHolder: Sendable {
     private let state = Mutex(State())
 
     /// Activates the policy; the reported version always comes from the policy itself.
-    func set(policy: WDPolicy) {
-        replaceEngine(with: WDEngine(policy: policy), version: policy.version)
+    func set(policy: GDPolicy) {
+        replaceEngine(with: GDEngine(policy: policy), version: policy.version)
     }
 
     /// Returns the holder to the allow-everything state.
@@ -22,7 +22,7 @@ final class PolicyHolder: Sendable {
         replaceEngine(with: nil, version: 0)
     }
 
-    func engine() -> WDEngine? {
+    func engine() -> GDEngine? {
         state.withLock { $0.engine }
     }
 
@@ -54,8 +54,8 @@ final class PolicyHolder: Sendable {
 
     /// Swaps the engine under the lock; the previous one is released only after unlocking, so its C++ teardown
     /// never runs while the Endpoint Security handler waits on the lock.
-    private func replaceEngine(with engine: WDEngine?, version: Int64) {
-        let previous = state.withLock { state -> WDEngine? in
+    private func replaceEngine(with engine: GDEngine?, version: Int64) {
+        let previous = state.withLock { state -> GDEngine? in
             let previous = state.engine
             state.engine = engine
             state.version = version

@@ -1,7 +1,7 @@
 #import <Foundation/Foundation.h>
 
-#import <CoreBridge/WDAccessRequest.h>
-#import <CoreBridge/WDDecision.h>
-#import <CoreBridge/WDEngine.h>
-#import <CoreBridge/WDPolicy.h>
-#import <CoreBridge/WDProcessInfo.h>
+#import <CoreBridge/GDAccessRequest.h>
+#import <CoreBridge/GDDecision.h>
+#import <CoreBridge/GDEngine.h>
+#import <CoreBridge/GDPolicy.h>
+#import <CoreBridge/GDProcessInfo.h>

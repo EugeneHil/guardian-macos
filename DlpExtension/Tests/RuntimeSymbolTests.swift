@@ -2,7 +2,7 @@ import XCTest
 
 final class RuntimeSymbolTests: XCTestCase {
     func testUnknownSymbolResolvesToNil() {
-        XCTAssertNil(RuntimeSymbol.address(of: "warden_symbol_that_does_not_exist"))
+        XCTAssertNil(RuntimeSymbol.address(of: "guardian_symbol_that_does_not_exist"))
     }
 
     func testExistingSymbolResolves() {

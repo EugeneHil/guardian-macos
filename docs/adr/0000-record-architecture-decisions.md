@@ -5,7 +5,7 @@
 
 ## Context
 
-Warden spans three repositories and several non-obvious platform decisions (Endpoint Security signing, cross-platform C++ core, Swift Concurrency rules). Decisions must be traceable after the fact.
+Guardian spans three repositories and several non-obvious platform decisions (Endpoint Security signing, cross-platform C++ core, Swift Concurrency rules). Decisions must be traceable after the fact.
 
 ## Decision
 
