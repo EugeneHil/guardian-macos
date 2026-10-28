@@ -42,9 +42,10 @@ let project = Project(
                 "NSSystemExtensionUsageDescription": "Guardian installs a system extension that enforces DLP policy.",
             ]),
             sources: ["GuardianApp/Sources/**", "Shared/**"],
+            resources: ["GuardianApp/Resources/**"],
             entitlements: .file(path: "GuardianApp/GuardianApp.entitlements"),
             dependencies: [.target(name: "DlpExtension")] + appFrameworks,
-            settings: .settings(base: adhoc)
+            settings: .settings(base: adhoc.merging(["ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon"]) { $1 })
         ),
         .target(
             name: "DlpExtension",
