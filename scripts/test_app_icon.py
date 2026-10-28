@@ -1,65 +1,51 @@
 import json
 import os
-import subprocess
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ICONSET = os.path.join(ROOT, "GuardianApp", "Resources", "Assets.xcassets", "AppIcon.appiconset")
-CONTENTS = os.path.join(ICONSET, "Contents.json")
+ICON = os.path.join(ROOT, "GuardianApp", "Resources", "AppIcon.icon")
+MANIFEST = os.path.join(ICON, "icon.json")
 PROJECT_SWIFT = os.path.join(ROOT, "Project.swift")
 
-# idiom "mac", size "WxH", scale "1x"/"2x" -> pixel side length Xcode expects.
-REQUIRED = [
-    ("16x16", "1x", 16),
-    ("16x16", "2x", 32),
-    ("32x32", "1x", 32),
-    ("32x32", "2x", 64),
-    ("128x128", "1x", 128),
-    ("128x128", "2x", 256),
-    ("256x256", "1x", 256),
-    ("256x256", "2x", 512),
-    ("512x512", "1x", 512),
-    ("512x512", "2x", 1024),
-]
-
-
-def pixel_size(path):
-    out = subprocess.run(
-        ["sips", "-g", "pixelWidth", "-g", "pixelHeight", path], capture_output=True, text=True, check=True
-    ).stdout
-    values = {}
-    for line in out.splitlines():
-        line = line.strip()
-        if ":" in line:
-            key, _, value = line.partition(":")
-            values[key.strip()] = int(value.strip())
-    return values.get("pixelWidth"), values.get("pixelHeight")
+# Liquid Glass (Icon Composer) format: icon.json's "fill" layer covers the full squircle shape
+# with no margin, which a flat appiconset image cannot do (the system reserves a safe-zone
+# margin around any flat image it has to mask and shadow itself). Layers sit on top of the fill.
 
 
 class AppIconTests(unittest.TestCase):
-    def test_iconset_has_every_required_mac_size(self):
-        self.assertTrue(os.path.isdir(ICONSET), f"missing {ICONSET}")
-        self.assertTrue(os.path.isfile(CONTENTS), f"missing {CONTENTS}")
-        with open(CONTENTS, encoding="utf-8") as fh:
+    def test_icon_bundle_exists_with_an_opaque_fill_and_a_glyph_layer(self):
+        self.assertTrue(os.path.isdir(ICON), f"missing {ICON}")
+        self.assertTrue(os.path.isfile(MANIFEST), f"missing {MANIFEST}")
+        with open(MANIFEST, encoding="utf-8") as fh:
             manifest = json.load(fh)
-        entries = {
-            (image["size"], image["scale"]): image
-            for image in manifest["images"]
-            if image.get("idiom") == "mac"
-        }
-        for size, scale, expected_px in REQUIRED:
-            with self.subTest(size=size, scale=scale):
-                self.assertIn((size, scale), entries, f"Contents.json is missing {size} {scale}")
-                filename = entries[(size, scale)]["filename"]
-                path = os.path.join(ICONSET, filename)
-                self.assertTrue(os.path.isfile(path), f"missing icon file {path}")
-                width, height = pixel_size(path)
-                self.assertEqual((width, height), (expected_px, expected_px), path)
 
-    def test_project_swift_declares_resources(self):
+        fill = manifest.get("fill", {})
+        self.assertIn("solid", fill, "fill should be an opaque solid color, not a gradient or absent")
+        # srgb:R,G,B,A — the 4th component is alpha; must be fully opaque so no backdrop shows
+        # through (a transparent/translucent fill let macOS composite its own backdrop behind
+        # it, which was white in some contexts and made the white glyph invisible).
+        alpha = float(fill["solid"].split(":", 1)[1].split(",")[3])
+        self.assertEqual(alpha, 1.0, "fill must be fully opaque")
+
+        groups = manifest.get("groups", [])
+        self.assertTrue(groups, "icon.json has no layer groups: the glyph was never added")
+        layers = [layer for group in groups for layer in group.get("layers", [])]
+        self.assertTrue(layers, "icon.json has no layers inside its groups")
+        for layer in layers:
+            with self.subTest(layer=layer.get("name")):
+                image_name = layer["image-name"]
+                path = os.path.join(ICON, "Assets", image_name)
+                self.assertTrue(os.path.isfile(path), f"missing layer image {path}")
+                self.assertFalse(layer.get("hidden", False), f"layer {image_name} is hidden")
+
+        platforms = manifest.get("supported-platforms", {}).get("squares", [])
+        self.assertIn("macOS", platforms)
+
+    def test_project_swift_declares_resources_and_the_icon_name(self):
         with open(PROJECT_SWIFT, encoding="utf-8") as fh:
             text = fh.read()
         self.assertIn('resources: ["GuardianApp/Resources/**"]', text)
+        self.assertIn('"ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon"', text)
 
 
 if __name__ == "__main__":
