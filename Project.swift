@@ -37,6 +37,7 @@ let project = Project(
             bundleId: appID,
             infoPlist: .extendingDefault(with: [
                 "LSUIElement": true,
+                "CFBundleDisplayName": "Guardian",
                 // ATS would reject the self-signed server certificate despite the SPKI pin (ADR-0003).
                 "NSAppTransportSecurity": ["NSAllowsArbitraryLoads": true],
                 "NSSystemExtensionUsageDescription": "Guardian installs a system extension that enforces DLP policy.",
