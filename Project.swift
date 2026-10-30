@@ -34,6 +34,9 @@ let project = Project(
             name: "GuardianApp",
             destinations: .macOS,
             product: .app,
+            // Finder labels a bundle with its file name, not CFBundleDisplayName, so the product
+            // is "Guardian.app" while the target and scheme stay "GuardianApp".
+            productName: "Guardian",
             bundleId: appID,
             infoPlist: .extendingDefault(with: [
                 "LSUIElement": true,
