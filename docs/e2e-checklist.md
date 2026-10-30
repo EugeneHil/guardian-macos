@@ -11,8 +11,8 @@ Run in the macOS VM described in [vm-setup.md](vm-setup.md), once per release. C
 
 ## 2. Build and sign
 
-- [x] On the host: `scripts/build.sh`. Expected: build succeeds, extension and app are ad-hoc signed (`codesign -dv build/Build/Products/Debug/GuardianApp.app` shows `Signature=adhoc`).
-- [x] Copy `GuardianApp.app` into the guest's `/Applications` (VirtioFS shared directory). Expected: the app launches and shows the menu bar icon.
+- [x] On the host: `scripts/build.sh`. Expected: build succeeds, extension and app are ad-hoc signed (`codesign -dv build/Build/Products/Debug/Guardian.app` shows `Signature=adhoc`).
+- [x] Copy `Guardian.app` into the guest's `/Applications` (VirtioFS shared directory). Expected: the app launches and shows the menu bar icon.
 
 ## 3. Activate
 

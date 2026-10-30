@@ -45,7 +45,7 @@ Endpoint Security needs a restricted entitlement that only a paid Apple account 
 
 1. Prepare the guest as in [docs/vm-setup.md](docs/vm-setup.md) (snapshot `es-ready`, at least 2 vCPU).
 2. On the host, build and ad-hoc sign: `scripts/build.sh`.
-3. Copy `build/Build/Products/Debug/GuardianApp.app` into the guest's `/Applications`.
+3. Copy `build/Build/Products/Debug/Guardian.app` into the guest's `/Applications`.
 4. Launch it, install the extension, approve it in System Settings (Login Items & Extensions) and grant Full Disk Access as described in [docs/vm-setup.md](docs/vm-setup.md). Whether the app (as opposed to the extension) strictly needs it is confirmed in ADR-0001 after the VM run.
 5. In Settings enter the server URL, the SPKI pin and the agent token (from the password manager; never commit them).
 
