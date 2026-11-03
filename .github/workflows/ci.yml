@@ -12,7 +12,7 @@ jobs:
   macos-build:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Select newest Xcode
@@ -30,7 +30,7 @@ jobs:
   macos-quality:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Select newest Xcode
@@ -52,7 +52,7 @@ jobs:
   tokens:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - uses: actions/setup-python@v7
