@@ -114,6 +114,15 @@ def read_text(path):
         return None
 
 
+DATA_URI = re.compile(r"data:[-\w.+]+/[-\w.+]+;base64,[A-Za-z0-9+/=]+")
+
+
+def strip_data_uris(text):
+    # Embedded image bytes are opaque binary, not identifier text, and can coincidentally
+    # contain substrings that look like a residual product name.
+    return DATA_URI.sub("", text)
+
+
 def offenders(group_name):
     group = GROUPS[group_name]
     allowed = ALLOW[group_name]
@@ -130,7 +139,7 @@ def offenders(group_name):
         if text is None:
             continue
         for number, line in enumerate(text.splitlines(), 1):
-            if not group.pattern.search(line) or is_exempt_line(line):
+            if not group.pattern.search(strip_data_uris(line)) or is_exempt_line(line):
                 continue
             found.append(f"{path}:{number}: {line.strip()}")
     return found
@@ -191,6 +200,19 @@ def core_problems(core_dir):
     elif grep.returncode != 1:
         problems.append("git grep failed: " + grep.stderr.decode("utf-8").strip())
     return problems
+
+
+class DataUriStripping(unittest.TestCase):
+    def test_base64_payload_is_removed_before_pattern_matching(self):
+        # Encoded image bytes are opaque binary, not identifier text; they can coincidentally
+        # contain substrings that look like "warden"/"wdn" (as the shipped icon's SVG does).
+        line = '<image href="data:image/png;base64,eGhUjQIBAewLp+O2eWp2WdNkBXuGIHJnn70xnr9Y"/>'
+        self.assertIsNone(PATTERN.search(strip_data_uris(line)))
+        self.assertIsNotNone(PATTERN.search(line), "fixture should actually contain a false hit")
+
+    def test_real_text_around_a_data_uri_is_still_checked(self):
+        line = '<!-- warden --><image href="data:image/png;base64,QUFBQQ=="/>'
+        self.assertIsNotNone(PATTERN.search(strip_data_uris(line)))
 
 
 class ExemptLine(unittest.TestCase):

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Ad-hoc sign a built app inside-out (ADR-0001 finding 1): extension first, then the app.
-# Usage: scripts/sign.sh [path/to/GuardianApp.app]
+# Usage: scripts/sign.sh [path/to/Guardian.app]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-app="${1:-build/Build/Products/Debug/GuardianApp.app}"
+app="${1:-build/Build/Products/Debug/Guardian.app}"
 exts=()
 while IFS= read -r found; do exts+=("$found"); done < <(
   find "$app/Contents/Library/SystemExtensions" -maxdepth 1 -name '*.systemextension')
