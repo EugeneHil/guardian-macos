@@ -33,11 +33,11 @@ actor CachedSecretStore<C: Clock>: SecretStoring where C.Duration == Duration {
     func token() async throws -> String? {
         switch cache {
         case let .loaded(token):
-            return token
+            token
         case let .failed(error, retryAt) where clock.now < retryAt:
             throw error
         case .failed, .unknown:
-            return try await readThrough()
+            try await readThrough()
         }
     }
 
