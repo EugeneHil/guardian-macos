@@ -87,7 +87,8 @@ From [ADR-0001](docs/adr/0001-adhoc-signed-es-extension.md) and the v0.1 design:
 - Ad-hoc signing and the Full Disk Access grant are done by hand; every rebuild replaces the extension and needs the approval cycle again.
 - Deny covers writes as well as reads: policy evaluation sees every open regardless of access mode.
 - After `kill -9` the extension is restarted by sysextd; a fail-open window of 15 s was measured on one run (see ADR-0001, "Verified in Plan 4").
-- The NSXPC peer requirement can only check the bundle identifier (no Team ID).
+- The NSXPC peer requirement can only check the bundle identifier (no Team ID), so a local process that ad-hoc signs itself with that identifier can reach the extension's Mach service.
+- Path matching is lexical and case-sensitive: the same file escapes a deny rule under a different spelling of its path (letter case, Unicode normalization, or the `/System/Volumes/Data` firmlink).
 - The pinned server certificate has no expiry or hostname check (parity with `curl --pinnedpubkey`); revocation means changing the pin.
 - The agent token is stored in the legacy file keychain, and the ad-hoc signature changes with each build, so the token may need to be re-entered after a rebuild.
 - Pending events (up to 5000) are kept in a private file in Application Support and sent after a restart; on quit the app makes one upload attempt of at most 3 s. A crash between the extension handing events over and the first save can still lose them. Live block notifications are best effort.
