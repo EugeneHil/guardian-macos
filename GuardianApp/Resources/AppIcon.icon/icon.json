@@ -1,0 +1,21 @@
+{
+  "fill" : {
+    "solid" : "srgb:0.00000,0.00000,0.00000,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "hidden" : false,
+          "image-name" : "knight.svg",
+          "name" : "knight"
+        }
+      ]
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}

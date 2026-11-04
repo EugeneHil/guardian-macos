@@ -34,17 +34,22 @@ let project = Project(
             name: "GuardianApp",
             destinations: .macOS,
             product: .app,
+            // Finder labels a bundle with its file name, not CFBundleDisplayName, so the product
+            // is "Guardian.app" while the target and scheme stay "GuardianApp".
+            productName: "Guardian",
             bundleId: appID,
             infoPlist: .extendingDefault(with: [
                 "LSUIElement": true,
+                "CFBundleDisplayName": "Guardian",
                 // ATS would reject the self-signed server certificate despite the SPKI pin (ADR-0003).
                 "NSAppTransportSecurity": ["NSAllowsArbitraryLoads": true],
                 "NSSystemExtensionUsageDescription": "Guardian installs a system extension that enforces DLP policy.",
             ]),
             sources: ["GuardianApp/Sources/**", "Shared/**"],
+            resources: ["GuardianApp/Resources/**"],
             entitlements: .file(path: "GuardianApp/GuardianApp.entitlements"),
             dependencies: [.target(name: "DlpExtension")] + appFrameworks,
-            settings: .settings(base: adhoc)
+            settings: .settings(base: adhoc.merging(["ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon"]) { $1 })
         ),
         .target(
             name: "DlpExtension",
